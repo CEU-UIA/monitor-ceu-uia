@@ -14,7 +14,7 @@ def render_macro_tasa(go_to):
         go_to("macro_home")
 
     st.markdown("## 📈 Tasa de interés")
-    st.caption("Tasa de adelantos a cuentas corrientes de empresas - % TNA")
+    st.caption("Tasa de adelantos a cuentas corrientes de empresas - % TNA  |  DEBUG: v2")
     st.divider()
 
     tasa = get_monetaria_serie(145)
