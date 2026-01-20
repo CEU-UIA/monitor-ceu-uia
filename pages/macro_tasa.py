@@ -48,12 +48,13 @@ def render_macro_tasa(go_to):
         # (4) Descargar CSV debajo del "Último dato"
         csv_bytes = tasa.rename(columns={"Date": "date", "value": "tna"}).to_csv(index=False).encode("utf-8")
         file_name = f"tasa_tna_{last_date_ts.strftime('%Y-%m-%d')}.csv"
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         st.download_button(
             label="⬇️ Descargar CSV",
             data=csv_bytes,
             file_name=file_name,
             mime="text/csv",
-            use_container_width=True,
+            use_container_width=False,
         )
 
     with c2:
