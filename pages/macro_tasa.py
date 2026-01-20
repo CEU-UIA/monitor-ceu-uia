@@ -57,7 +57,7 @@ def render_macro_tasa(go_to):
         inflacion_esp_12m = 20.0  # umbral fijo que pediste
         pos = "por encima" if last_val > inflacion_esp_12m else "debajo"
         title_txt = (
-            f"La tasa se ubica {pos} de la inflación esperada para los próximos 12 meses: "
+            f"   La tasa se ubica {pos} de la inflación esperada para los próximos 12 meses: "
             f"{_fmt_pct_es(inflacion_esp_12m, 0)}%"
         )
 
