@@ -52,7 +52,7 @@ def render_macro_fx(go_to):
         st.warning("Sin datos A3500.")
         return
 
-    last_date = fx["Date"].iloc[-1]
+    last_date = pd.to_datetime(fx["Date"].iloc[-1])
     last_fx = float(fx["FX"].iloc[-1])
 
     fx_m, _ = asof_fx(fx, last_date - pd.Timedelta(days=30))
@@ -67,29 +67,40 @@ def render_macro_fx(go_to):
     if upper_last is not None and last_fx > 0:
         dist_to_upper = (upper_last / last_fx - 1) * 100
 
+    # Plot desde feb-2025
     start_date_plot = pd.Timestamp("2025-02-01")
     fx_plot = fx[fx["Date"] >= start_date_plot].copy()
     df_plot = df[df["Date"] >= start_date_plot].copy()
-    bands_end = pd.to_datetime(df_plot["Date"].max()) if not df_plot.empty else pd.to_datetime(fx_plot["Date"].max())
+    bands_end = (
+        pd.to_datetime(df_plot["Date"].max())
+        if not df_plot.empty
+        else pd.to_datetime(fx_plot["Date"].max())
+    )
 
-    if dist_to_upper is not None:
-        st.markdown(
-            f"<div style='text-align:center; font-weight:700; margin: 6px 0 14px 0;'>"
-            f"El TC se encuentra a {safe_pct(dist_to_upper, 1)} de la banda superior"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-
+    # ---- Layout KPI + gráfico ----
     kpi_col, chart_col = st.columns([1, 3], vertical_alignment="top")
 
     with kpi_col:
         st.markdown(
-            f"<div style='font-size:54px; font-weight:800; line-height:1.0'>{int(round(last_fx))}</div>",
+            f"""
+            <div style="font-size:54px; font-weight:800; line-height:1.0;">
+              <span style="font-size:16px; font-weight:700; color:#111827;">ARS/USD</span>
+              {int(round(last_fx))}
+            </div>
+            """,
             unsafe_allow_html=True,
         )
-        st.caption(f"Fecha: {pd.to_datetime(last_date).date().isoformat()}")
-        st.markdown(f"**% mensual:** {safe_pct(vm, 1)}")
-        st.markdown(f"**% anual:** {safe_pct(va, 1)}")
+        st.caption(f"Fecha: {last_date.strftime('%d/%m/%Y')}")
+
+        # % más grandes
+        st.markdown(
+            f"<div style='font-size:16px; margin-top:10px;'><b>% mensual:</b> {safe_pct(vm, 1)}</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div style='font-size:16px; margin-top:6px;'><b>% anual:</b> {safe_pct(va, 1)}</div>",
+            unsafe_allow_html=True,
+        )
 
     with chart_col:
         fig = go.Figure()
@@ -100,7 +111,7 @@ def render_macro_fx(go_to):
                 y=df_plot["upper"],
                 name="Banda superior",
                 line=dict(dash="dash"),
-                hovertemplate="%{x|%Y-%m-%d}<br>Banda superior: %{y:.0f}<extra></extra>",
+                hovertemplate="%{x|%d/%m/%Y}<br>Banda superior: %{y:.0f}<extra></extra>",
             )
         )
         fig.add_trace(
@@ -111,7 +122,7 @@ def render_macro_fx(go_to):
                 line=dict(dash="dash"),
                 fill="tonexty",
                 fillcolor="rgba(0,0,0,0.08)",
-                hovertemplate="%{x|%Y-%m-%d}<br>Banda inferior: %{y:.0f}<extra></extra>",
+                hovertemplate="%{x|%d/%m/%Y}<br>Banda inferior: %{y:.0f}<extra></extra>",
             )
         )
         fig.add_trace(
@@ -121,12 +132,52 @@ def render_macro_fx(go_to):
                 name="A3500",
                 mode="lines",
                 connectgaps=False,
-                hovertemplate="%{x|%Y-%m-%d}<br>A3500: %{y:.0f}<extra></extra>",
+                hovertemplate="%{x|%d/%m/%Y}<br>A3500: %{y:.0f}<extra></extra>",
             )
         )
 
-        fig.update_layout(hovermode="x", height=600, margin=dict(t=10), showlegend=True)
-        fig.update_xaxes(title_text="", range=[start_date_plot, bands_end])
+        # ---- Eje X en español (ticks manuales) ----
+        mes_es = {
+            1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
+            7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic",
+        }
+
+        min_date = start_date_plot
+        max_date = bands_end + pd.DateOffset(months=1)  # aire a la derecha
+
+        tickvals = pd.date_range(min_date.normalize(), max_date.normalize(), freq="2MS")
+        ticktext = [f"{mes_es[d.month]} {d.year}" for d in tickvals]
+
+        # ---- Título dentro del gráfico (como en tasas) ----
+        title_txt = ""
+        if dist_to_upper is not None:
+            title_txt = (
+                f"El TC se encuentra a {safe_pct(dist_to_upper, 1)} de la banda superior"
+            )
+
+        fig.update_layout(
+            hovermode="x",
+            height=600,
+            margin=dict(l=10, r=10, t=60, b=60),
+            showlegend=True,
+            title=dict(text=title_txt, x=0, xanchor="left"),
+        )
+
+        fig.update_xaxes(
+            title_text="",
+            range=[min_date, max_date],
+            tickmode="array",
+            tickvals=tickvals,
+            ticktext=ticktext,
+        )
         fig.update_yaxes(title_text="")
 
         st.plotly_chart(fig, use_container_width=True)
+
+        # Fuente
+        st.markdown(
+            "<div style='color:#6b7280; font-size:12px; margin-top:6px;'>"
+            "Fuente: Banco Central de la República Argentina."
+            "</div>",
+            unsafe_allow_html=True,
+        )
