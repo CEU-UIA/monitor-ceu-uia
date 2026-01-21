@@ -88,8 +88,12 @@ def render_macro_fx(go_to):
            .reset_index(drop=True)
     )
 
-    # TC sin huecos: forward-fill (usa último dato disponible)
-    df["FX"] = df["FX"].ffill()
+    # TC sin huecos, pero SOLO hasta el último dato observado
+    last_fx_date = fx["Date"].max()
+    
+    df["FX"] = df["FX"].where(
+        df["Date"] <= last_fx_date
+    ).ffill()
 
     # Distancia a banda superior (solo si hay banda en last_date)
     up_row = df.loc[df["Date"] == last_date, "upper"]
