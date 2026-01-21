@@ -286,22 +286,31 @@ def render_macro_fx(go_to):
     default_sel = ["ITCRM"] if "ITCRM" in series_all else ([series_all[0]] if series_all else [])
 
     # -------------------------
-    # Selector de series (checkboxes – legible)
+    # Selector de series (1 fila – 4 columnas)
     # -------------------------
     st.markdown("**Seleccionar series**")
     
-    sel_series = []
-    cols = st.columns(3)
+    series_focus = [
+        "ITCRM",
+        "ITCRB Brasil",
+        "ITCRB Estados Unidos",
+        "ITCRB China",
+    ]
     
-    for i, s in enumerate(series_all):
-        with cols[i % 3]:
+    # Filtrar por si alguna no existiera en el Excel
+    series_focus = [s for s in series_focus if s in series_all]
+    
+    cols = st.columns(4)
+    sel_series = []
+    
+    for col, s in zip(cols, series_focus):
+        with col:
             if st.checkbox(
                 s,
                 value=(s in default_sel),
                 key=f"itcrm_cb_{s}"
             ):
                 sel_series.append(s)
-
 
     if not sel_series:
         st.info("Seleccioná al menos una serie para ver el gráfico.")
