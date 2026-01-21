@@ -291,7 +291,7 @@ def render_macro_fx(go_to):
     st.markdown("**Seleccionar series**")
     
     series_focus = [
-        "ITCRM",
+        "ITCRM ",
         "ITCRB Brasil",
         "ITCRB Estados Unidos",
         "ITCRB China",
