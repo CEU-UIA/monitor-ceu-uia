@@ -263,3 +263,201 @@ def render_macro_fx(go_to):
             "</div>",
             unsafe_allow_html=True,
         )
+
+
+    # =========================================================
+    # TIPO DE CAMBIO REAL (ITCRM + bilaterales)
+    # =========================================================
+    st.divider()
+    st.markdown("### 🌍 Tipo de cambio real multilateral y bilaterales")
+    st.caption("Índices (BCRA) — ITCRM y tipos de cambio reales bilaterales")
+
+    with st.spinner("Cargando ITCRM..."):
+        tcr_long = get_itcrm_excel_long()
+
+    if tcr_long.empty:
+        st.warning("Sin datos de ITCRM.")
+        return
+
+    # Lista de series disponibles
+    series_all = sorted(tcr_long["Serie"].dropna().unique().tolist())
+
+    default_sel = []
+    if "ITCRM" in series_all:
+        default_sel = ["ITCRM"]
+    else:
+        default_sel = [series_all[0]] if series_all else []
+
+    # Selector (permite más de 1)
+    sel_series = st.multiselect(
+        "Seleccionar series",
+        options=series_all,
+        default=default_sel,
+        key="itcrm_series_sel",
+    )
+
+    if not sel_series:
+        st.info("Seleccioná al menos una serie para ver el gráfico.")
+        return
+
+    # Data filtrada
+    tcr = tcr_long[tcr_long["Serie"].isin(sel_series)].copy()
+    tcr = tcr.sort_values("Date")
+
+    # Tomamos "serie principal" para KPIs = primera seleccionada
+    main_series = sel_series[0]
+    tcr_main = (
+        tcr_long[tcr_long["Serie"] == main_series]
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+    last_tcr_date = pd.to_datetime(tcr_main["Date"].iloc[-1])
+    last_tcr_val = float(tcr_main["Value"].iloc[-1])
+
+    # MoM/YoY aproximado por "as of" (30d y 365d) para mantener coherencia con tu FX
+    def asof_value(df_: pd.DataFrame, target_date: pd.Timestamp):
+        tt = df_.dropna(subset=["Date", "Value"]).sort_values("Date")
+        tt = tt[tt["Date"] <= target_date]
+        if tt.empty:
+            return None, None
+        rr = tt.iloc[-1]
+        return float(rr["Value"]), pd.to_datetime(rr["Date"])
+
+    tcr_m, _ = asof_value(tcr_main, last_tcr_date - pd.Timedelta(days=30))
+    tcr_y, _ = asof_value(tcr_main, last_tcr_date - pd.Timedelta(days=365))
+
+    vm_tcr = None if tcr_m is None else (last_tcr_val / tcr_m - 1) * 100
+    va_tcr = None if tcr_y is None else (last_tcr_val / tcr_y - 1) * 100
+
+    # Layout KPI + gráfico (mismo esquema que arriba)
+    kpi2_col, chart2_col = st.columns([1, 3], vertical_alignment="top")
+
+    with kpi2_col:
+        st.markdown(
+            f"""
+            <div style="font-size:46px; font-weight:800; line-height:1.0;">
+              <span style="font-size:16px; font-weight:700; color:#111827;">{main_series}</span>
+              {last_tcr_val:.1f}
+            </div>
+            """.replace(".", ","),  # para que el 1 decimal tenga coma
+            unsafe_allow_html=True,
+        )
+        st.caption(f"Fecha: {last_tcr_date.strftime('%d/%m/%Y')}")
+
+        st.markdown(
+            f"<div style='font-size:18px; margin-top:14px;'><b>% mensual:</b> {safe_pct(vm_tcr, 1)}</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div style='font-size:18px; margin-top:8px;'><b>% anual:</b> {safe_pct(va_tcr, 1)}</div>",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        # Export CSV de las series seleccionadas
+        export_tcr = (
+            tcr.pivot_table(index="Date", columns="Serie", values="Value", aggfunc="last")
+              .sort_index()
+              .reset_index()
+              .rename(columns={"Date": "date"})
+        )
+        csv_bytes_tcr = export_tcr.to_csv(index=False).encode("utf-8")
+        file_name_tcr = f"itcrm_{last_tcr_date.strftime('%Y-%m-%d')}.csv"
+
+        st.download_button(
+            label="⬇️ Descargar CSV",
+            data=csv_bytes_tcr,
+            file_name=file_name_tcr,
+            mime="text/csv",
+            use_container_width=False,
+            key="dl_itcrm_csv",
+        )
+
+    with chart2_col:
+        # Selector rango (mismo set que arriba)
+        rango_map2 = {"6M": 180, "1A": 365, "2A": 365 * 2, "5A": 365 * 5, "TODO": None}
+
+        rango2 = st.radio(
+            label="",
+            options=list(rango_map2.keys()),
+            index=1,  # 1A default
+            horizontal=True,
+            label_visibility="collapsed",
+            key="itcrm_rango",
+        )
+
+        days2 = rango_map2[rango2]
+        tcr_min = pd.to_datetime(tcr["Date"].min())
+        tcr_last = pd.to_datetime(tcr["Date"].max())
+
+        if days2 is None:
+            min_date2 = tcr_min
+        else:
+            min_date2 = max(tcr_min, tcr_last - pd.Timedelta(days=days2))
+
+        tcr_plot = tcr[tcr["Date"] >= min_date2].copy()
+
+        # aire a la derecha
+        max_date2 = tcr_last + pd.DateOffset(months=1)
+
+        fig2 = go.Figure()
+
+        # Una línea por serie (misma estética general)
+        for s in sel_series:
+            ss = tcr_plot[tcr_plot["Serie"] == s]
+            fig2.add_trace(
+                go.Scatter(
+                    x=ss["Date"],
+                    y=ss["Value"],
+                    name=s,
+                    mode="lines",
+                    connectgaps=True,
+                    hovertemplate="%{x|%d/%m/%Y}<br>%{y:.2f}<extra></extra>",
+                )
+            )
+
+        # ticks en español (reuso tu lógica)
+        mes_es = {
+            1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
+            7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic",
+        }
+
+        tick_freq2 = "6MS" if rango2 == "TODO" else "2MS"
+        tickvals2 = pd.date_range(min_date2.normalize(), max_date2.normalize(), freq=tick_freq2)
+        ticktext2 = [f"{mes_es[d.month]} {d.year}" for d in tickvals2]
+
+        fig2.update_layout(
+            hovermode="x",
+            height=520,
+            margin=dict(l=10, r=10, t=30, b=60),
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1.0,
+                font=dict(size=12),
+            ),
+        )
+
+        fig2.update_xaxes(
+            title_text="",
+            range=[min_date2, max_date2],
+            tickmode="array",
+            tickvals=tickvals2,
+            ticktext=ticktext2,
+        )
+        fig2.update_yaxes(title_text="")
+
+        st.plotly_chart(fig2, use_container_width=True)
+
+        st.markdown(
+            "<div style='color:#6b7280; font-size:12px; margin-top:6px;'>"
+            "Fuente: BCRA — ITCRMSerie.xlsx."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
