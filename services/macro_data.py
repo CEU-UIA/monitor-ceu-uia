@@ -2,19 +2,101 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+from io import BytesIO
 
 
 # ============================================================
-# TC mayorista (BCRA) - id=5
+# Helper genérico (BCRA Monetarias) — PAGINADO ROBUSTO
+# ============================================================
+@st.cache_data(ttl=60 * 60)
+def get_monetaria_serie(id_variable: int) -> pd.DataFrame:
+    """
+    Descarga series del endpoint Monetarias/{id_variable}.
+    Devuelve columnas: Date, value
+    Paginación robusta:
+      - Si metadata.count existe: usa count.
+      - Si no existe: corta cuando la página viene “corta” (< Limit).
+    """
+    url = f"https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/{id_variable}"
+    params = {"Limit": 1000, "Offset": 0}
+    data = []
+    last_err = None
+
+    for _ in range(3):
+        try:
+            params["Offset"] = 0
+            data = []
+
+            while True:
+                r = requests.get(url, params=params, timeout=20, verify=False)
+                r.raise_for_status()
+                payload = r.json()
+
+                results = payload.get("results", [])
+                if not results:
+                    break
+
+                detalle = results[0].get("detalle", [])
+                if not detalle:
+                    break
+
+                data.extend(detalle)
+
+                meta = payload.get("metadata", {}).get("resultset", {}) or {}
+                count = meta.get("count")
+
+                params["Offset"] += params["Limit"]
+
+                if count is not None:
+                    # corte con count
+                    if params["Offset"] >= count:
+                        break
+                else:
+                    # corte por página corta
+                    if len(detalle) < params["Limit"]:
+                        break
+
+            break  # ok
+        except requests.exceptions.RequestException as e:
+            last_err = str(e)
+
+    if not data:
+        # No rompemos: devolvemos vacío (las páginas lo manejan),
+        # pero dejamos el error visible en la app (no en consola).
+        if last_err:
+            st.error(f"Error BCRA Monetarias/{id_variable}: {last_err}")
+        return pd.DataFrame(columns=["Date", "value"])
+
+    df = pd.DataFrame(data)
+    df["Date"] = pd.to_datetime(df.get("fecha"), errors="coerce")
+    df["value"] = pd.to_numeric(df.get("valor"), errors="coerce")
+
+    return (
+        df[["Date", "value"]]
+        .dropna()
+        .drop_duplicates(subset=["Date"])
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+
+# ============================================================
+# TC mayorista (A3500)
 # ============================================================
 @st.cache_data(ttl=60 * 60)
 def get_a3500() -> pd.DataFrame:
     """
-    Wrapper del id=5 usando el helper genérico paginado.
+    A3500: intentamos id=5 (como venías usando).
+    Si no trae nada (por cambios del BCRA / entorno), fallback a 84.
     Devuelve columnas: Date, FX
     """
-    df = get_monetaria_serie(5)  # <- usa tu función paginada robusta
-    if df is None or df.empty:
+    df = get_monetaria_serie(5)
+
+    # fallback típico que suele ser A3500 en muchos códigos
+    if df.empty:
+        df = get_monetaria_serie(84)
+
+    if df.empty:
         return pd.DataFrame(columns=["Date", "FX"])
 
     out = df.rename(columns={"value": "FX"}).copy()
@@ -28,6 +110,7 @@ def get_a3500() -> pd.DataFrame:
         .sort_values("Date")
         .reset_index(drop=True)
     )
+
 
 # ============================================================
 # REM
@@ -110,41 +193,13 @@ def get_ipc_bcra() -> pd.DataFrame:
     IPC (% mensual) desde BCRA Monetarias idVariable=27.
     Devuelve v_m_CPI en DECIMAL (ej 2.8% -> 0.028).
     """
-    url = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/27"
-    params = {"Limit": 1000, "Offset": 0}
-    data = []
-
-    for _ in range(3):
-        try:
-            while True:
-                r = requests.get(url, params=params, timeout=10, verify=False)
-                r.raise_for_status()
-                payload = r.json()
-
-                results = payload.get("results", [])
-                if not results:
-                    break
-
-                detalle = results[0].get("detalle", [])
-                if not detalle:
-                    break
-
-                data.extend(detalle)
-
-                meta = payload["metadata"]["resultset"]
-                params["Offset"] += params["Limit"]
-                if params["Offset"] >= meta["count"]:
-                    break
-            break
-        except requests.exceptions.RequestException:
-            pass
-
-    if not data:
+    df = get_monetaria_serie(27)
+    if df.empty:
         return pd.DataFrame(columns=["Date", "v_m_CPI", "Period"])
 
-    df = pd.DataFrame(data)
-    df["Date"] = pd.to_datetime(df["fecha"], errors="coerce")
-    df["v_m_pct"] = pd.to_numeric(df["valor"], errors="coerce")  # viene como % (ej 2.8)
+    df = df.rename(columns={"value": "v_m_pct"}).copy()
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df["v_m_pct"] = pd.to_numeric(df["v_m_pct"], errors="coerce")
     df = df.dropna(subset=["Date", "v_m_pct"]).sort_values("Date")
 
     df["Period"] = df["Date"].dt.to_period("M")
@@ -200,107 +255,39 @@ def build_bands_2026(bands_2025: pd.DataFrame, rem: pd.DataFrame, ipc: pd.DataFr
 
 
 # ============================================================
-# Helper genérico
-# ============================================================
-# ============================================================
-# Helper genérico (BCRA Monetarias) — PAGINADO
-# ============================================================
-@st.cache_data(ttl=60 * 60)
-def get_monetaria_serie(id_variable: int) -> pd.DataFrame:
-    url = f"https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/{id_variable}"
-    params = {"Limit": 1000, "Offset": 0}
-    data = []
-
-    for _ in range(3):
-        try:
-            while True:
-                r = requests.get(url, params=params, timeout=10, verify=False)
-                r.raise_for_status()
-                payload = r.json()
-
-                results = payload.get("results", [])
-                if not results:
-                    break
-
-                detalle = results[0].get("detalle", [])
-                if not detalle:
-                    break
-
-                data.extend(detalle)
-
-                meta = payload.get("metadata", {}).get("resultset", {})
-                count = meta.get("count")
-
-                params["Offset"] += params["Limit"]
-                if count is None or params["Offset"] >= count:
-                    break
-            break
-        except requests.exceptions.RequestException:
-            pass
-
-    if not data:
-        return pd.DataFrame(columns=["Date", "value"])
-
-    df = pd.DataFrame(data)
-    df["Date"] = pd.to_datetime(df["fecha"], errors="coerce")
-    df["value"] = pd.to_numeric(df["valor"], errors="coerce")
-
-    return (
-        df[["Date", "value"]]
-        .dropna()
-        .drop_duplicates(subset=["Date"])
-        .sort_values("Date")
-        .reset_index(drop=True)
-    )
-
-
-
-# ============================================================
 # ITCRM (Excel BCRA) - ITCRM + bilaterales
 # ============================================================
-
-from io import BytesIO
-
 @st.cache_data(ttl=12 * 60 * 60)
 def get_itcrm_excel_long() -> pd.DataFrame:
     """
     Descarga ITCRMSerie.xlsx del BCRA y devuelve formato largo:
     columnas: Date, Serie, Value
-
-    Hoja: "ITCRM y bilaterales"
-    Col A: fechas
-    Fila 2: nombres de series
     """
     url = "https://www.bcra.gob.ar/archivos/Pdfs/PublicacionesEstadisticas/ITCRMSerie.xlsx"
     sheet = "ITCRM y bilaterales"
 
-    r = requests.get(url, timeout=60)  # NO usa verify=False (es bcra.gob.ar)
+    r = requests.get(url, timeout=60)
     r.raise_for_status()
 
     df = pd.read_excel(
         BytesIO(r.content),
         sheet_name=sheet,
-        header=1,          # fila 2 como encabezados
-        engine="openpyxl"
+        header=1,
+        engine="openpyxl",
     )
 
-    # Primera columna = fecha
     df = df.rename(columns={df.columns[0]: "Date"}).copy()
     df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
     df = df.dropna(subset=["Date"])
 
-    # A numérico (vienen con coma o como string a veces)
     for c in df.columns[1:]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # Largo
     value_cols = [c for c in df.columns if c != "Date"]
     long_df = (
         df.melt(id_vars=["Date"], value_vars=value_cols, var_name="Serie", value_name="Value")
-          .dropna(subset=["Value"])
-          .sort_values(["Serie", "Date"])
-          .reset_index(drop=True)
+        .dropna(subset=["Value"])
+        .sort_values(["Serie", "Date"])
+        .reset_index(drop=True)
     )
-
     return long_df
-
