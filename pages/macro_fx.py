@@ -50,12 +50,14 @@ def render_macro_fx(go_to):
             .sort_values("Date")
         )
 
+        # merge diario (bandas diarias + TC diario)
         df = bands.merge(fx, on="Date", how="left").sort_values("Date")
 
     if fx.empty:
         st.warning("Sin datos del tipo de cambio.")
         return
 
+    # Último dato (TC)
     last_date = pd.to_datetime(fx["Date"].iloc[-1])
     last_fx = float(fx["FX"].iloc[-1])
 
@@ -71,15 +73,44 @@ def render_macro_fx(go_to):
     if upper_last is not None and last_fx > 0:
         dist_to_upper = (upper_last / last_fx - 1) * 100
 
-    # Plot desde feb-2025
-    start_date_plot = pd.Timestamp("2025-02-01")
-    fx_plot = fx[fx["Date"] >= start_date_plot].copy()
-    df_plot = df[df["Date"] >= start_date_plot].copy()
-    bands_end = (
-        pd.to_datetime(df_plot["Date"].max())
-        if not df_plot.empty
-        else pd.to_datetime(fx_plot["Date"].max())
+    # =========================
+    # Selector de rango (default 1A)
+    # =========================
+    rango_map = {
+        "6M": 180,
+        "1A": 365,
+        "2A": 365 * 2,
+        "5A": 365 * 5,
+        "TODO": None,
+    }
+
+    # default index = "1A"
+    rango = st.segmented_control(
+        "Período",
+        options=list(rango_map.keys()),
+        default="1A",
     )
+
+    # fallback por si la versión de streamlit no soporta segmented_control
+    if rango is None:
+        rango = st.radio("Período", list(rango_map.keys()), index=1, horizontal=True)
+
+    days = rango_map.get(rango)
+
+    min_all = pd.to_datetime(df["Date"].min())
+    max_all = pd.to_datetime(df["Date"].max())
+
+    if days is None:
+        min_date = min_all
+    else:
+        min_date = max(min_all, last_date - pd.Timedelta(days=days))
+
+    # recortes
+    df_plot = df[df["Date"] >= min_date].copy()
+    fx_plot = fx[fx["Date"] >= min_date].copy()
+
+    # aire a la derecha
+    max_date = max_all + pd.DateOffset(months=1)
 
     # ---- Layout KPI + gráfico ----
     kpi_col, chart_col = st.columns([1, 3], vertical_alignment="top")
@@ -107,10 +138,20 @@ def render_macro_fx(go_to):
 
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-        fx_csv = fx[["Date", "FX"]].copy()
-        fx_csv = fx_csv.rename(columns={"Date": "date", "FX": "tc_mayorista_ref"})
-        csv_bytes = fx_csv.to_csv(index=False).encode("utf-8")
-        file_name = f"tc_mayorista_ref_{last_date.strftime('%Y-%m-%d')}.csv"
+        # =========================
+        # Descargar CSV (TC + bandas)
+        # =========================
+        export = df[["Date", "FX", "lower", "upper"]].copy()
+        export = export.rename(
+            columns={
+                "Date": "date",
+                "FX": "tc_mayorista",
+                "lower": "banda_inferior",
+                "upper": "banda_superior",
+            }
+        )
+        csv_bytes = export.to_csv(index=False).encode("utf-8")
+        file_name = f"tc_bandas_{last_date.strftime('%Y-%m-%d')}.csv"
 
         st.download_button(
             label="⬇️ Descargar CSV",
@@ -147,10 +188,10 @@ def render_macro_fx(go_to):
             go.Scatter(
                 x=fx_plot["Date"],
                 y=fx_plot["FX"],
-                name="TC mayorista (ref.)",
+                name="TC mayorista",
                 mode="lines",
                 connectgaps=False,
-                hovertemplate="%{x|%d/%m/%Y}<br>TC mayorista (ref.): %{y:.2f}<extra></extra>",
+                hovertemplate="%{x|%d/%m/%Y}<br>TC mayorista: %{y:.2f}<extra></extra>",
             )
         )
 
@@ -158,9 +199,6 @@ def render_macro_fx(go_to):
             1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
             7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic",
         }
-
-        min_date = start_date_plot
-        max_date = bands_end + pd.DateOffset(months=1)
 
         tickvals = pd.date_range(min_date.normalize(), max_date.normalize(), freq="2MS")
         ticktext = [f"{mes_es[d.month]} {d.year}" for d in tickvals]
@@ -178,8 +216,8 @@ def render_macro_fx(go_to):
                 orientation="h",
                 yanchor="bottom",
                 y=1.02,
-                xanchor="left",
-                x=0,
+                xanchor="right",
+                x=1.0,
                 font=dict(size=12),
             ),
             title=dict(text=title_txt, x=0, xanchor="left"),
