@@ -227,12 +227,44 @@ def build_bands_2026(bands_2025: pd.DataFrame, rem: pd.DataFrame, ipc: pd.DataFr
 # ============================================================
 # Helper genérico
 # ============================================================
+# ============================================================
+# Helper genérico (BCRA Monetarias) — PAGINADO
+# ============================================================
 @st.cache_data(ttl=60 * 60)
 def get_monetaria_serie(id_variable: int) -> pd.DataFrame:
     url = f"https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/{id_variable}"
-    r = requests.get(url, timeout=10, verify=False)
-    r.raise_for_status()
-    data = r.json()["results"][0]["detalle"]
+    params = {"Limit": 1000, "Offset": 0}
+    data = []
+
+    for _ in range(3):
+        try:
+            while True:
+                r = requests.get(url, params=params, timeout=10, verify=False)
+                r.raise_for_status()
+                payload = r.json()
+
+                results = payload.get("results", [])
+                if not results:
+                    break
+
+                detalle = results[0].get("detalle", [])
+                if not detalle:
+                    break
+
+                data.extend(detalle)
+
+                meta = payload.get("metadata", {}).get("resultset", {})
+                count = meta.get("count")
+
+                params["Offset"] += params["Limit"]
+                if count is None or params["Offset"] >= count:
+                    break
+            break
+        except requests.exceptions.RequestException:
+            pass
+
+    if not data:
+        return pd.DataFrame(columns=["Date", "value"])
 
     df = pd.DataFrame(data)
     df["Date"] = pd.to_datetime(df["fecha"], errors="coerce")
@@ -247,11 +279,13 @@ def get_monetaria_serie(id_variable: int) -> pd.DataFrame:
     )
 
 
-from io import BytesIO
 
 # ============================================================
 # ITCRM (Excel BCRA) - ITCRM + bilaterales
 # ============================================================
+
+from io import BytesIO
+
 @st.cache_data(ttl=12 * 60 * 60)
 def get_itcrm_excel_long() -> pd.DataFrame:
     """
