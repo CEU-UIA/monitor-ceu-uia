@@ -6,7 +6,7 @@ import streamlit as st
 
 @st.cache_data(ttl=60 * 60)
 def get_a3500() -> pd.DataFrame:
-    url = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/84"
+    url = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/5"
     params = {"Limit": 1000, "Offset": 0}
     data = []
 
