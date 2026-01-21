@@ -97,7 +97,7 @@ def render_macro_tasa(go_to):
     }
 
     # ---------- Selector angosto, alineado a la izquierda ----------
-    sel_wrap, _ = st.columns([2, 8])
+    sel_wrap, _ = st.columns([4, 6])
     with sel_wrap:
         sel_ids = st.multiselect(
             "Tasas",
