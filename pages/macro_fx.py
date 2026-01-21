@@ -33,6 +33,7 @@ def render_macro_fx(go_to):
         rem = get_rem_last()
         ipc = get_ipc_bcra()  # Monetarias/27 en decimal
 
+        # Bandas (solo desde 2025-04-14 en adelante)
         bands_2025 = build_bands_2025("2025-04-14", "2025-12-31", 1000.0, 1400.0)
         bands_2026 = build_bands_2026(bands_2025, rem, ipc)
         bands = (
@@ -48,10 +49,8 @@ def render_macro_fx(go_to):
             fx.dropna(subset=["Date", "FX"])
             .drop_duplicates(subset=["Date"])
             .sort_values("Date")
+            .reset_index(drop=True)
         )
-
-        # merge diario (bandas diarias + TC diario)
-        df = bands.merge(fx, on="Date", how="left").sort_values("Date")
 
     if fx.empty:
         st.warning("Sin datos del tipo de cambio.")
@@ -63,54 +62,30 @@ def render_macro_fx(go_to):
 
     fx_m, _ = asof_fx(fx, last_date - pd.Timedelta(days=30))
     fx_y, _ = asof_fx(fx, last_date - pd.Timedelta(days=365))
-
     vm = None if fx_m is None else (last_fx / fx_m - 1) * 100
     va = None if fx_y is None else (last_fx / fx_y - 1) * 100
 
+    # =========================
+    # Armamos DF “histórico” diario desde el inicio del TC
+    # (bandas quedan NaN antes de 2025-04-14)
+    # =========================
+    fx_min = pd.to_datetime(fx["Date"].min())
+    bands_max = pd.to_datetime(bands["Date"].max()) if not bands.empty else last_date
+    full_end = max(last_date, bands_max)
+
+    cal = pd.DataFrame({"Date": pd.date_range(fx_min, full_end, freq="D")})
+    df = (
+        cal.merge(fx, on="Date", how="left")
+           .merge(bands, on="Date", how="left")
+           .sort_values("Date")
+    )
+
+    # Distancia a banda superior (en la última fecha si existe upper)
     up_row = df.loc[df["Date"] == last_date, "upper"]
     upper_last = float(up_row.iloc[0]) if (not up_row.empty and pd.notna(up_row.iloc[0])) else None
     dist_to_upper = None
     if upper_last is not None and last_fx > 0:
         dist_to_upper = (upper_last / last_fx - 1) * 100
-
-    # =========================
-    # Selector de rango (default 1A)
-    # =========================
-    rango_map = {
-        "6M": 180,
-        "1A": 365,
-        "2A": 365 * 2,
-        "5A": 365 * 5,
-        "TODO": None,
-    }
-
-    # default index = "1A"
-    rango = st.segmented_control(
-        "Período",
-        options=list(rango_map.keys()),
-        default="1A",
-    )
-
-    # fallback por si la versión de streamlit no soporta segmented_control
-    if rango is None:
-        rango = st.radio("Período", list(rango_map.keys()), index=1, horizontal=True)
-
-    days = rango_map.get(rango)
-
-    min_all = pd.to_datetime(df["Date"].min())
-    max_all = pd.to_datetime(df["Date"].max())
-
-    if days is None:
-        min_date = min_all
-    else:
-        min_date = max(min_all, last_date - pd.Timedelta(days=days))
-
-    # recortes
-    df_plot = df[df["Date"] >= min_date].copy()
-    fx_plot = fx[fx["Date"] >= min_date].copy()
-
-    # aire a la derecha
-    max_date = max_all + pd.DateOffset(months=1)
 
     # ---- Layout KPI + gráfico ----
     kpi_col, chart_col = st.columns([1, 3], vertical_alignment="top")
@@ -138,9 +113,7 @@ def render_macro_fx(go_to):
 
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-        # =========================
         # Descargar CSV (TC + bandas)
-        # =========================
         export = df[["Date", "FX", "lower", "upper"]].copy()
         export = export.rename(
             columns={
@@ -162,8 +135,41 @@ def render_macro_fx(go_to):
         )
 
     with chart_col:
+        # =========================
+        # Selector de rango (mismo “look” radio con puntito)
+        # Default = 1A
+        # =========================
+        rango_map = {
+            "6M": 180,
+            "1A": 365,
+            "2A": 365 * 2,
+            "5A": 365 * 5,
+            "TODO": None,
+        }
+
+        rango = st.radio(
+            label="",
+            options=list(rango_map.keys()),
+            index=1,               # 1A por defecto
+            horizontal=True,
+            label_visibility="collapsed",
+            key="fx_rango",
+        )
+
+        days = rango_map[rango]
+        if days is None:
+            min_date = fx_min
+        else:
+            min_date = max(fx_min, last_date - pd.Timedelta(days=days))
+
+        df_plot = df[df["Date"] >= min_date].copy()
+
+        # aire a la derecha
+        max_date = pd.to_datetime(df["Date"].max()) + pd.DateOffset(months=1)
+
         fig = go.Figure()
 
+        # Bandas (pueden ser NaN antes de 2025-04-14; Plotly las “corta”)
         fig.add_trace(
             go.Scatter(
                 x=df_plot["Date"],
@@ -184,10 +190,12 @@ def render_macro_fx(go_to):
                 hovertemplate="%{x|%d/%m/%Y}<br>Banda inferior: %{y:.0f}<extra></extra>",
             )
         )
+
+        # TC
         fig.add_trace(
             go.Scatter(
-                x=fx_plot["Date"],
-                y=fx_plot["FX"],
+                x=df_plot["Date"],
+                y=df_plot["FX"],
                 name="TC mayorista",
                 mode="lines",
                 connectgaps=False,
@@ -195,11 +203,11 @@ def render_macro_fx(go_to):
             )
         )
 
+        # ticks en español
         mes_es = {
             1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
             7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic",
         }
-
         tickvals = pd.date_range(min_date.normalize(), max_date.normalize(), freq="2MS")
         ticktext = [f"{mes_es[d.month]} {d.year}" for d in tickvals]
 
@@ -212,6 +220,7 @@ def render_macro_fx(go_to):
             height=600,
             margin=dict(l=10, r=10, t=90, b=60),
             showlegend=True,
+            # leyenda arriba a la derecha
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
