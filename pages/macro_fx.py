@@ -6,7 +6,7 @@ from services.macro_data import (
     build_bands_2025,
     build_bands_2026,
     get_a3500,
-    get_ipc_nacional_nivel_general,
+    get_ipc_bcra,
     get_rem_last,
 )
 from ui.common import safe_pct
@@ -17,7 +17,7 @@ def render_macro_fx(go_to):
         go_to("macro_home")
 
     st.markdown("## 💱 Tipo de cambio")
-    st.caption("Tipo de cambio mayorista A3500 y bandas cambiarias – ARS/USD")
+    st.caption("Tipo de cambio mayorista de referencia y bandas cambiarias – ARS/USD")
     st.divider()
 
     def asof_fx(df_fx: pd.DataFrame, target_date: pd.Timestamp):
@@ -29,9 +29,9 @@ def render_macro_fx(go_to):
         return float(r["FX"]), pd.to_datetime(r["Date"])
 
     with st.spinner("Cargando datos..."):
-        fx = get_a3500()
+        fx = get_a3500()          # hoy apunta a Monetarias/5
         rem = get_rem_last()
-        ipc = get_ipc_nacional_nivel_general()
+        ipc = get_ipc_bcra()      # IPC BCRA id=27, ya en decimal
 
         bands_2025 = build_bands_2025("2025-04-14", "2025-12-31", 1000.0, 1400.0)
         bands_2026 = build_bands_2026(bands_2025, rem, ipc)
@@ -44,12 +44,16 @@ def render_macro_fx(go_to):
         fx = fx.copy()
         fx["Date"] = pd.to_datetime(fx["Date"], errors="coerce")
         fx["FX"] = pd.to_numeric(fx["FX"], errors="coerce")
-        fx = fx.dropna(subset=["Date", "FX"]).drop_duplicates(subset=["Date"]).sort_values("Date")
+        fx = (
+            fx.dropna(subset=["Date", "FX"])
+            .drop_duplicates(subset=["Date"])
+            .sort_values("Date")
+        )
 
         df = bands.merge(fx, on="Date", how="left").sort_values("Date")
 
     if fx.empty:
-        st.warning("Sin datos A3500.")
+        st.warning("Sin datos del tipo de cambio.")
         return
 
     last_date = pd.to_datetime(fx["Date"].iloc[-1])
@@ -91,8 +95,7 @@ def render_macro_fx(go_to):
             unsafe_allow_html=True,
         )
         st.caption(f"Fecha: {last_date.strftime('%d/%m/%Y')}")
-    
-        # % más grandes (como pediste)
+
         st.markdown(
             f"<div style='font-size:18px; margin-top:14px;'><b>% mensual:</b> {safe_pct(vm, 1)}</div>",
             unsafe_allow_html=True,
@@ -101,24 +104,22 @@ def render_macro_fx(go_to):
             f"<div style='font-size:18px; margin-top:8px;'><b>% anual:</b> {safe_pct(va, 1)}</div>",
             unsafe_allow_html=True,
         )
-    
-        # espacio antes del botón
+
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-    
-        # Descargar CSV (debajo de todo)
+
+        # Descargar CSV
         fx_csv = fx[["Date", "FX"]].copy()
-        fx_csv = fx_csv.rename(columns={"Date": "date", "FX": "a3500"})
+        fx_csv = fx_csv.rename(columns={"Date": "date", "FX": "tc_mayorista_ref"})
         csv_bytes = fx_csv.to_csv(index=False).encode("utf-8")
-        file_name = f"a3500_{last_date.strftime('%Y-%m-%d')}.csv"
-    
+        file_name = f"tc_mayorista_ref_{last_date.strftime('%Y-%m-%d')}.csv"
+
         st.download_button(
             label="⬇️ Descargar CSV",
             data=csv_bytes,
             file_name=file_name,
             mime="text/csv",
-            use_container_width=False,  # más angosto, como en tasa
+            use_container_width=False,
         )
-
 
     with chart_col:
         fig = go.Figure()
@@ -147,10 +148,10 @@ def render_macro_fx(go_to):
             go.Scatter(
                 x=fx_plot["Date"],
                 y=fx_plot["FX"],
-                name="A3500",
+                name="TC mayorista (ref.)",
                 mode="lines",
                 connectgaps=False,
-                hovertemplate="%{x|%d/%m/%Y}<br>A3500: %{y:.0f}<extra></extra>",
+                hovertemplate="%{x|%d/%m/%Y}<br>TC mayorista (ref.): %{y:.2f}<extra></extra>",
             )
         )
 
@@ -161,41 +162,3 @@ def render_macro_fx(go_to):
         }
 
         min_date = start_date_plot
-        max_date = bands_end + pd.DateOffset(months=1)  # aire a la derecha
-
-        tickvals = pd.date_range(min_date.normalize(), max_date.normalize(), freq="2MS")
-        ticktext = [f"{mes_es[d.month]} {d.year}" for d in tickvals]
-
-        # ---- Título dentro del gráfico (como en tasas) ----
-        title_txt = ""
-        if dist_to_upper is not None:
-            title_txt = (
-                f"   El TC se encuentra a {safe_pct(dist_to_upper, 1)} de la banda superior"
-            )
-
-        fig.update_layout(
-            hovermode="x",
-            height=600,
-            margin=dict(l=10, r=10, t=60, b=60),
-            showlegend=True,
-            title=dict(text=title_txt, x=0, xanchor="left"),
-        )
-
-        fig.update_xaxes(
-            title_text="",
-            range=[min_date, max_date],
-            tickmode="array",
-            tickvals=tickvals,
-            ticktext=ticktext,
-        )
-        fig.update_yaxes(title_text="")
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Fuente
-        st.markdown(
-            "<div style='color:#6b7280; font-size:12px; margin-top:6px;'>"
-            "Fuente: Banco Central de la República Argentina."
-            "</div>",
-            unsafe_allow_html=True,
-        )
