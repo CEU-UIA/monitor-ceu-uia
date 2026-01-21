@@ -316,6 +316,14 @@ def render_macro_fx(go_to):
         st.info("Seleccioná al menos una serie para ver el gráfico.")
         return
 
+    if st.checkbox(
+    s,
+    value=(s == "ITCRM"),   # ← ITCRM por default
+    key=f"itcrm_cb_{s}"
+):
+    sel_series.append(s)
+
+
     # -------------------------
     # Data filtrada
     # -------------------------
