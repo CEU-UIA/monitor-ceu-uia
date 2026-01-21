@@ -264,13 +264,12 @@ def render_macro_fx(go_to):
             unsafe_allow_html=True,
         )
 
-
     # =========================================================
     # TIPO DE CAMBIO REAL (ITCRM + bilaterales)
     # =========================================================
     st.divider()
     st.markdown("### 🌍 Tipo de cambio real multilateral y bilaterales")
-    st.caption("Índices (BCRA) — ITCRM y tipos de cambio reales bilaterales")
+    st.caption("ITCRM y tipos de cambio reales bilaterales (100=17-dic-15)")
 
     with st.spinner("Cargando ITCRM..."):
         tcr_long = get_itcrm_excel_long()
@@ -279,32 +278,51 @@ def render_macro_fx(go_to):
         st.warning("Sin datos de ITCRM.")
         return
 
-    # Lista de series disponibles
+    # -------------------------
+    # Series disponibles
+    # -------------------------
     series_all = sorted(tcr_long["Serie"].dropna().unique().tolist())
 
-    default_sel = []
-    if "ITCRM" in series_all:
-        default_sel = ["ITCRM"]
-    else:
-        default_sel = [series_all[0]] if series_all else []
+    default_sel = ["ITCRM"] if "ITCRM" in series_all else ([series_all[0]] if series_all else [])
 
-    # Selector (permite más de 1)
+    # -------------------------
+    # Selector de series (fix legibilidad)
+    # -------------------------
+    st.markdown("**Seleccionar series**")
+
+    st.markdown(
+        """
+        <style>
+          div[data-testid="stMultiSelect"] span {
+            color: #111827 !important;
+          }
+          div[data-testid="stMultiSelect"] div[role="button"] {
+            background: rgba(17,24,39,0.06) !important;
+            border: 1px solid rgba(17,24,39,0.15) !important;
+          }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     sel_series = st.multiselect(
-        "Seleccionar series",
+        label="",
         options=series_all,
         default=default_sel,
         key="itcrm_series_sel",
+        label_visibility="collapsed",
     )
 
     if not sel_series:
         st.info("Seleccioná al menos una serie para ver el gráfico.")
         return
 
+    # -------------------------
     # Data filtrada
-    tcr = tcr_long[tcr_long["Serie"].isin(sel_series)].copy()
-    tcr = tcr.sort_values("Date")
+    # -------------------------
+    tcr = tcr_long[tcr_long["Serie"].isin(sel_series)].copy().sort_values("Date")
 
-    # Tomamos "serie principal" para KPIs = primera seleccionada
+    # Serie principal = primera seleccionada
     main_series = sel_series[0]
     tcr_main = (
         tcr_long[tcr_long["Serie"] == main_series]
@@ -315,7 +333,7 @@ def render_macro_fx(go_to):
     last_tcr_date = pd.to_datetime(tcr_main["Date"].iloc[-1])
     last_tcr_val = float(tcr_main["Value"].iloc[-1])
 
-    # MoM/YoY aproximado por "as of" (30d y 365d) para mantener coherencia con tu FX
+    # As-of helpers (consistente con TC nominal)
     def asof_value(df_: pd.DataFrame, target_date: pd.Timestamp):
         tt = df_.dropna(subset=["Date", "Value"]).sort_values("Date")
         tt = tt[tt["Date"] <= target_date]
@@ -330,7 +348,9 @@ def render_macro_fx(go_to):
     vm_tcr = None if tcr_m is None else (last_tcr_val / tcr_m - 1) * 100
     va_tcr = None if tcr_y is None else (last_tcr_val / tcr_y - 1) * 100
 
-    # Layout KPI + gráfico (mismo esquema que arriba)
+    # -------------------------
+    # Layout KPI + gráfico
+    # -------------------------
     kpi2_col, chart2_col = st.columns([1, 3], vertical_alignment="top")
 
     with kpi2_col:
@@ -340,7 +360,7 @@ def render_macro_fx(go_to):
               <span style="font-size:16px; font-weight:700; color:#111827;">{main_series}</span>
               {last_tcr_val:.1f}
             </div>
-            """.replace(".", ","),  # para que el 1 decimal tenga coma
+            """.replace(".", ","),
             unsafe_allow_html=True,
         )
         st.caption(f"Fecha: {last_tcr_date.strftime('%d/%m/%Y')}")
@@ -356,12 +376,12 @@ def render_macro_fx(go_to):
 
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-        # Export CSV de las series seleccionadas
+        # CSV export
         export_tcr = (
             tcr.pivot_table(index="Date", columns="Serie", values="Value", aggfunc="last")
-              .sort_index()
-              .reset_index()
-              .rename(columns={"Date": "date"})
+            .sort_index()
+            .reset_index()
+            .rename(columns={"Date": "date"})
         )
         csv_bytes_tcr = export_tcr.to_csv(index=False).encode("utf-8")
         file_name_tcr = f"itcrm_{last_tcr_date.strftime('%Y-%m-%d')}.csv"
@@ -371,18 +391,17 @@ def render_macro_fx(go_to):
             data=csv_bytes_tcr,
             file_name=file_name_tcr,
             mime="text/csv",
-            use_container_width=False,
             key="dl_itcrm_csv",
         )
 
     with chart2_col:
-        # Selector rango (mismo set que arriba)
+        # Selector rango (TODO por default)
         rango_map2 = {"6M": 180, "1A": 365, "2A": 365 * 2, "5A": 365 * 5, "TODO": None}
 
         rango2 = st.radio(
             label="",
             options=list(rango_map2.keys()),
-            index=1,  # 1A default
+            index=list(rango_map2.keys()).index("TODO"),
             horizontal=True,
             label_visibility="collapsed",
             key="itcrm_rango",
@@ -392,19 +411,13 @@ def render_macro_fx(go_to):
         tcr_min = pd.to_datetime(tcr["Date"].min())
         tcr_last = pd.to_datetime(tcr["Date"].max())
 
-        if days2 is None:
-            min_date2 = tcr_min
-        else:
-            min_date2 = max(tcr_min, tcr_last - pd.Timedelta(days=days2))
-
+        min_date2 = tcr_min if days2 is None else max(tcr_min, tcr_last - pd.Timedelta(days=days2))
         tcr_plot = tcr[tcr["Date"] >= min_date2].copy()
 
-        # aire a la derecha
         max_date2 = tcr_last + pd.DateOffset(months=1)
 
         fig2 = go.Figure()
 
-        # Una línea por serie (misma estética general)
         for s in sel_series:
             ss = tcr_plot[tcr_plot["Serie"] == s]
             fig2.add_trace(
@@ -418,7 +431,6 @@ def render_macro_fx(go_to):
                 )
             )
 
-        # ticks en español (reuso tu lógica)
         mes_es = {
             1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
             7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic",
@@ -460,4 +472,3 @@ def render_macro_fx(go_to):
             "</div>",
             unsafe_allow_html=True,
         )
-
