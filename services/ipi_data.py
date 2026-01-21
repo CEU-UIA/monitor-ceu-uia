@@ -9,19 +9,40 @@ import streamlit as st
 def cargar_ipi_excel():
     """Descarga y lee el Excel del IPI Manufacturero (INDEC) .xls"""
     url = "https://www.indec.gob.ar/ftp/cuadros/economia/sh_ipi_manufacturero_2025.xls"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/vnd.ms-excel,application/octet-stream,*/*",
+        "Referer": "https://www.indec.gob.ar/",
+    }
+
     try:
-        r = requests.get(url, timeout=60, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(url, timeout=60, headers=headers)
+        # Si INDEC responde 403/404/etc
         r.raise_for_status()
+
+        # Si por algún motivo te devuelven HTML (bloqueo/proxy), no es un Excel
+        head = r.content[:200].lstrip().lower()
+        if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
+            st.error(
+                "IPI: INDEC devolvió HTML en lugar de un .xls. "
+                f"Status={r.status_code} Content-Type={r.headers.get('Content-Type')}"
+            )
+            return None, None
 
         xls = BytesIO(r.content)
 
-        # .xls -> xlrd
+        # .xls -> xlrd (asegurate de tener xlrd>=2.0 en requirements)
         df_c2 = pd.read_excel(xls, sheet_name="Cuadro 2", header=None, engine="xlrd")
+        xls.seek(0)
         df_c5 = pd.read_excel(xls, sheet_name="Cuadro 5", header=None, engine="xlrd")
 
         return df_c2, df_c5
-    except Exception:
+
+    except Exception as e:
+        st.error(f"IPI: error descargando/leyendo Excel ({type(e).__name__}): {e}")
         return None, None
+
 
 
 def procesar_serie_excel(df: pd.DataFrame, col_idx: int) -> pd.DataFrame:
