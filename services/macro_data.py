@@ -6,6 +6,7 @@ import streamlit as st
 
 @st.cache_data(ttl=60 * 60)
 def get_a3500() -> pd.DataFrame:
+    # TC mayorista de referencia (BCRA) - idVariable 5
     url = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/5"
     params = {"Limit": 1000, "Offset": 0}
     data = []
@@ -77,46 +78,65 @@ def get_rem_last() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=12 * 60 * 60)
-def get_ipc_indec_full() -> pd.DataFrame:
-    url = "https://www.indec.gob.ar/ftp/cuadros/economia/serie_ipc_divisiones.csv"
-    try:
-        df = pd.read_csv(url, sep=";", decimal=",", encoding="utf-8")
-    except UnicodeDecodeError:
-        df = pd.read_csv(url, sep=";", decimal=",", encoding="latin1")
+def get_ipc_bcra() -> pd.DataFrame:
+    """
+    IPC (variación % mensual) desde BCRA Monetarias idVariable=27.
+    Devuelve:
+      - Date: fecha (fin de mes, típicamente)
+      - Period: periodo mensual
+      - v_m_CPI: variación mensual en DECIMAL (ej 2.8% -> 0.028)
+    """
+    url = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/27"
+    params = {"Limit": 1000, "Offset": 0}
+    data = []
 
-    df["Codigo"] = pd.to_numeric(df["Codigo"], errors="coerce")
-    df["Periodo"] = pd.to_datetime(df["Periodo"].astype(str), format="%Y%m", errors="coerce")
+    for _ in range(3):
+        try:
+            while True:
+                r = requests.get(url, params=params, timeout=10, verify=False)
+                r.raise_for_status()
+                payload = r.json()
 
-    for c in ["Descripcion", "Clasificador", "Region"]:
-        df[c] = df[c].astype(str).str.strip()
+                results = payload.get("results", [])
+                if not results:
+                    break
 
-    for c in ["Indice_IPC", "v_m_IPC", "v_i_a_IPC"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+                detalle = results[0].get("detalle", [])
+                if not detalle:
+                    break
 
-    return df.dropna(subset=["Periodo"]).sort_values("Periodo").reset_index(drop=True)
+                data.extend(detalle)
 
+                meta = payload["metadata"]["resultset"]
+                params["Offset"] += params["Limit"]
+                if params["Offset"] >= meta["count"]:
+                    break
+            break
+        except requests.exceptions.RequestException:
+            pass
 
-@st.cache_data(ttl=12 * 60 * 60)
-def get_ipc_nacional_nivel_general() -> pd.DataFrame:
-    df = get_ipc_indec_full()
+    if not data:
+        return pd.DataFrame(columns=["Date", "v_m_CPI", "Period"])
 
-    tmp = (
-        df[(df["Codigo"] == 0) & (df["Region"] == "Nacional")]
-        .dropna(subset=["v_m_IPC"])
-        .rename(columns={"Periodo": "Date"})
-        .sort_values("Date")
-    )
-    tmp["Period"] = tmp["Date"].dt.to_period("M")
-    tmp["v_m_CPI"] = tmp["v_m_IPC"] / 100.0
+    df = pd.DataFrame(data)
+    df["Date"] = pd.to_datetime(df["fecha"], errors="coerce")
+    df["v_m_pct"] = pd.to_numeric(df["valor"], errors="coerce")  # viene como % (ej 2.8)
+    df = df.dropna(subset=["Date", "v_m_pct"]).sort_values("Date")
+
+    df["Period"] = df["Date"].dt.to_period("M")
+    df["v_m_CPI"] = df["v_m_pct"] / 100.0  # % -> decimal
 
     return (
-        tmp[["Date", "v_m_CPI", "Period"]]
+        df[["Date", "v_m_CPI", "Period"]]
         .drop_duplicates("Period")
         .sort_values("Period")
         .reset_index(drop=True)
     )
 
 
+# ----------------------------
+# Bandas
+# ----------------------------
 def build_bands_2025(start, end, lower0, upper0) -> pd.DataFrame:
     g_up = (1 + 0.01) ** (1 / 30)
     g_dn = (1 - 0.01) ** (1 / 30)
@@ -124,23 +144,37 @@ def build_bands_2025(start, end, lower0, upper0) -> pd.DataFrame:
     dates = pd.date_range(start, end, freq="D")
     t = np.arange(len(dates))
 
-    return pd.DataFrame({"Date": dates, "lower": lower0 * (g_dn**t), "upper": upper0 * (g_up**t)})
+    return pd.DataFrame(
+        {"Date": dates, "lower": lower0 * (g_dn**t), "upper": upper0 * (g_up**t)}
+    )
 
 
 def build_bands_2026(bands_2025: pd.DataFrame, rem: pd.DataFrame, ipc: pd.DataFrame) -> pd.DataFrame:
+    """
+    ipc debe traer columnas: Date, Period, v_m_CPI (DECIMAL).
+    rem trae v_m_REM en % mensual.
+    """
     rem_m = rem.assign(Period=rem["Date"].dt.to_period("M"))[["Period", "v_m_REM"]]
     m = ipc.merge(rem_m, on="Period", how="outer").sort_values("Period")
+
+    # Si hay IPC (decimal), usarlo; si no, usar REM (% -> decimal)
     m["v_m_dec"] = np.where(m["v_m_CPI"].notna(), m["v_m_CPI"], m["v_m_REM"] / 100)
 
     end_month = m.loc[m["v_m_REM"].notna(), "Period"].max() + 2
     b = pd.DataFrame({"Period": pd.period_range("2026-01", end_month, freq="M")})
     b["ref"] = b["Period"] - 2
-    b = b.merge(m[["Period", "v_m_dec"]].rename(columns={"Period": "ref"}), on="ref", how="left")
+    b = b.merge(
+        m[["Period", "v_m_dec"]].rename(columns={"Period": "ref"}),
+        on="ref",
+        how="left",
+    )
 
     lower0 = bands_2025.loc[bands_2025["Date"] == "2025-12-31", "lower"].iloc[0]
     upper0 = bands_2025.loc[bands_2025["Date"] == "2025-12-31", "upper"].iloc[0]
 
-    cal = pd.DataFrame({"Date": pd.date_range("2026-01-01", b["Period"].max().to_timestamp("M"), freq="D")})
+    cal = pd.DataFrame(
+        {"Date": pd.date_range("2026-01-01", b["Period"].max().to_timestamp("M"), freq="D")}
+    )
     cal["Period"] = cal["Date"].dt.to_period("M")
     cal = cal.merge(b[["Period", "v_m_dec"]], on="Period", how="left")
 
@@ -151,10 +185,14 @@ def build_bands_2026(bands_2025: pd.DataFrame, rem: pd.DataFrame, ipc: pd.DataFr
     return cal[["Date", "lower", "upper"]]
 
 
+# ----------------------------
+# Helper genérico (lo dejé igual)
+# ----------------------------
 @st.cache_data(ttl=60 * 60)
 def get_monetaria_serie(id_variable: int) -> pd.DataFrame:
     url = f"https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/{id_variable}"
     r = requests.get(url, timeout=10, verify=False)
+    r.raise_for_status()
     data = r.json()["results"][0]["detalle"]
 
     df = pd.DataFrame(data)
