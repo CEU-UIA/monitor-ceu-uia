@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+import numpy as np
 
 from services.macro_data import (
     build_bands_2025,
@@ -88,12 +89,12 @@ def render_macro_fx(go_to):
            .reset_index(drop=True)
     )
 
-    # TC sin huecos, pero SOLO hasta el último dato observado
+    # TC sin huecos SOLO hasta el último dato observado (después queda vacío)
     last_fx_date = fx["Date"].max()
     
-    df["FX"] = df["FX"].where(
-        df["Date"] <= last_fx_date
-    ).ffill()
+    df["FX"] = df["FX"].ffill()
+    df.loc[df["Date"] > last_fx_date, "FX"] = np.nan
+
 
     # Distancia a banda superior (solo si hay banda en last_date)
     up_row = df.loc[df["Date"] == last_date, "upper"]
