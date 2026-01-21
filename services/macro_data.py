@@ -245,3 +245,53 @@ def get_monetaria_serie(id_variable: int) -> pd.DataFrame:
         .sort_values("Date")
         .reset_index(drop=True)
     )
+
+
+from io import BytesIO
+
+# ============================================================
+# ITCRM (Excel BCRA) - ITCRM + bilaterales
+# ============================================================
+@st.cache_data(ttl=12 * 60 * 60)
+def get_itcrm_excel_long() -> pd.DataFrame:
+    """
+    Descarga ITCRMSerie.xlsx del BCRA y devuelve formato largo:
+    columnas: Date, Serie, Value
+
+    Hoja: "ITCRM y bilaterales"
+    Col A: fechas
+    Fila 2: nombres de series
+    """
+    url = "https://www.bcra.gob.ar/archivos/Pdfs/PublicacionesEstadisticas/ITCRMSerie.xlsx"
+    sheet = "ITCRM y bilaterales"
+
+    r = requests.get(url, timeout=60)  # NO usa verify=False (es bcra.gob.ar)
+    r.raise_for_status()
+
+    df = pd.read_excel(
+        BytesIO(r.content),
+        sheet_name=sheet,
+        header=1,          # fila 2 como encabezados
+        engine="openpyxl"
+    )
+
+    # Primera columna = fecha
+    df = df.rename(columns={df.columns[0]: "Date"}).copy()
+    df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
+    df = df.dropna(subset=["Date"])
+
+    # A numérico (vienen con coma o como string a veces)
+    for c in df.columns[1:]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Largo
+    value_cols = [c for c in df.columns if c != "Date"]
+    long_df = (
+        df.melt(id_vars=["Date"], value_vars=value_cols, var_name="Serie", value_name="Value")
+          .dropna(subset=["Value"])
+          .sort_values(["Serie", "Date"])
+          .reset_index(drop=True)
+    )
+
+    return long_df
+
