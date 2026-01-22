@@ -358,7 +358,7 @@ def get_datos_gob_series(series_id: str) -> pd.DataFrame:
     Descarga una serie puntual desde datos.gob.ar.
     Usamos CSV (probado por vos en Jupyter) porque suele ser lo más estable.
     """
-    params = {"ids": series_id, "format": "csv", "limit": 10000}
+    params = {"ids": series_id, "format": "csv", "limit": 1000}
 
     try:
         r = requests.get(
