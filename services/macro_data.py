@@ -432,12 +432,23 @@ def get_emae_both_csv() -> pd.DataFrame:
     df = pd.read_csv(StringIO(r.text))
     df.columns = [c.strip() for c in df.columns]
 
-    # Caso A) CSV ancho: indice_tiempo + columnas con ids
+    # ✅ Caso A) columnas con nombre por ID
     if "indice_tiempo" in df.columns and (EMAE_ORIGINAL_ID in df.columns) and (EMAE_DESEASON_ID in df.columns):
         df["indice_tiempo"] = pd.to_datetime(df["indice_tiempo"], errors="coerce")
         return df.dropna(subset=["indice_tiempo"]).sort_values("indice_tiempo")
 
-    # Caso B) CSV largo: indice_tiempo, serie_id, valor
+    # ✅ Caso B) columnas genéricas (TU CASO)
+    if {"indice_tiempo", "emae_original", "emae_desestacionalizada"}.issubset(df.columns):
+        df = df.rename(
+            columns={
+                "emae_original": EMAE_ORIGINAL_ID,
+                "emae_desestacionalizada": EMAE_DESEASON_ID,
+            }
+        )
+        df["indice_tiempo"] = pd.to_datetime(df["indice_tiempo"], errors="coerce")
+        return df.dropna(subset=["indice_tiempo"]).sort_values("indice_tiempo")
+
+    # ✅ Caso C) formato largo
     if {"indice_tiempo", "serie_id", "valor"}.issubset(df.columns):
         df["indice_tiempo"] = pd.to_datetime(df["indice_tiempo"], errors="coerce")
         df["valor"] = pd.to_numeric(df["valor"], errors="coerce")
@@ -448,10 +459,8 @@ def get_emae_both_csv() -> pd.DataFrame:
         )
         return wide.dropna(subset=["indice_tiempo"]).sort_values("indice_tiempo")
 
-    # Si llega un formato inesperado:
     st.warning(f"datos.gob.ar EMAE both: formato CSV inesperado. cols={df.columns.tolist()}")
     return pd.DataFrame()
-
 
 @st.cache_data(ttl=12 * 60 * 60)
 def get_emae_original() -> pd.DataFrame:
