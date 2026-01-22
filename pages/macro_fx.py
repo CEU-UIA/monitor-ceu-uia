@@ -3,6 +3,10 @@ import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 
+#### NUEVO: imports para frase aleatoria
+import random
+####
+
 from services.macro_data import (
     build_bands_2025,
     build_bands_2026,
@@ -13,6 +17,17 @@ from services.macro_data import (
 )
 
 from ui.common import safe_pct
+
+
+#### NUEVO: pool de frases (solo se muestra UNA, elegida al azar)
+INDU_LOADING_PHRASES = [
+    "La industria aporta más del 18% del valor agregado de la economía argentina.",
+    "La industria es el segundo mayor empleador privado del país.",
+    "Por cada empleo industrial directo se generan casi dos empleos indirectos.",
+    "Los salarios industriales son 23% más altos que el promedio privado.",
+    "Dos tercios de las exportaciones argentinas provienen de la industria.",
+]
+####
 
 
 def render_macro_fx(go_to):
@@ -34,6 +49,12 @@ def render_macro_fx(go_to):
     # =========================
     # Carga datos
     # =========================
+
+    #### NUEVO: frase mientras carga (se borra al terminar)
+    fact_ph = st.empty()
+    fact_ph.info("💡 " + random.choice(INDU_LOADING_PHRASES))
+    ####
+
     with st.spinner("Cargando datos..."):
         fx = get_a3500()          # id=5
         rem = get_rem_last()
@@ -58,6 +79,10 @@ def render_macro_fx(go_to):
             .sort_values("Date")
             .reset_index(drop=True)
         )
+
+    #### NUEVO: limpiar mensaje cuando terminó la carga
+    fact_ph.empty()
+    ####
 
     if fx.empty:
         st.warning("Sin datos del tipo de cambio.")
@@ -96,7 +121,6 @@ def render_macro_fx(go_to):
     
     df["FX"] = df["FX"].ffill()
     df.loc[df["Date"] > last_fx_date, "FX"] = np.nan
-
 
     # Distancia a banda superior (solo si hay banda en last_date)
     up_row = df.loc[df["Date"] == last_date, "upper"]
@@ -308,7 +332,6 @@ def render_macro_fx(go_to):
     if not sel_series:
         st.info("Seleccioná al menos una serie para ver el gráfico.")
         return
-
 
     # -------------------------
     # Data filtrada
