@@ -14,7 +14,7 @@ def render_main_home(go_to):
             max-width: 100% !important;
             padding-left: 0rem !important;
             padding-right: 0rem !important;
-            padding-top: 0.3rem !important;
+            padding-top: 0rem !important;
           }
         </style>
         """,
