@@ -339,7 +339,7 @@ def get_datos_gob_series(series_id: str) -> pd.DataFrame:
 
 # IDs (según lo que vos ya tenés definido)
 EMAE_ORIGINAL_ID = "143.3_NO_PR_2004_A_21"
-EMAE_DESEASON_ID = "453.1_SERIE_DESEADA_0_0_24_58"
+EMAE_DESEASON_ID = "143.3_NO_PR_2004_A_31"
 
 
 @st.cache_data(ttl=12 * 60 * 60)
