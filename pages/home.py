@@ -1,46 +1,37 @@
-
-import base64
 import streamlit as st
 
 
-def header_banner(image_path: str):
-    with open(image_path, "rb") as f:
-        img_base64 = base64.b64encode(f.read()).decode("utf-8")
-
+def render_main_home(go_to):
+    # ============================================================
+    # HOME – Full width SOLO para esta página
+    # (no rompe el resto del monitor)
+    # ============================================================
     st.markdown(
-        f"""
+        """
         <style>
-          /* Reduce el espacio superior default */
-          section.main > div {{
-            padding-top: 0rem;
-          }}
-          .block-container {{
-            padding-top: 0rem;
-          }}
-
-          /* Imagen full-bleed real */
-          .ceu-banner-img {{
-            width: 100vw;
-            max-width: 100vw;
-            height: auto;
-
-            margin-left: calc(-50vw + 50%);
-            margin-top: -1.6rem;  /* <- un cachitito más abajo (antes estaba más arriba) */
-
-            display: block;
-          }}
+          /* Forzar ancho completo y quitar aire superior SOLO en Home */
+          section.main > div.block-container {
+            max-width: 100% !important;
+            padding-left: 0rem !important;
+            padding-right: 0rem !important;
+            padding-top: 0.3rem !important;
+          }
         </style>
-
-        <img class="ceu-banner-img" src="data:image/png;base64,{img_base64}" />
         """,
         unsafe_allow_html=True,
     )
 
+    # ============================================================
+    # Banner superior (estable, sin CSS raro)
+    # ============================================================
+    st.image("assets/header_ceu.png", use_container_width=True)
 
+    # Un cachitito de separación (ajustable)
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-def render_main_home(go_to):
-    header_banner("assets/header_ceu.png")
-
+    # ============================================================
+    # Título
+    # ============================================================
     st.markdown(
         """
         <div class="home-wrap">
@@ -51,17 +42,23 @@ def render_main_home(go_to):
         unsafe_allow_html=True,
     )
 
+    # ============================================================
+    # Botones de secciones
+    # ============================================================
     left_pad, mid, right_pad = st.columns([1, 6, 1])
     with mid:
         st.markdown('<div class="home-cards">', unsafe_allow_html=True)
+
         c1, c2, c3 = st.columns(3)
 
         with c1:
             if st.button("📊\nMacroeconomía", use_container_width=True):
                 go_to("macro_home")
+
         with c2:
             if st.button("💼\nEmpleo Privado", use_container_width=True):
                 go_to("empleo")
+
         with c3:
             if st.button("🏭\nProducción Industrial", use_container_width=True):
                 go_to("ipi")
