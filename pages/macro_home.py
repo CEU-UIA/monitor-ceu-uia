@@ -128,44 +128,49 @@ def render_macro_home(go_to):
             margin: 10px auto 0 auto;
             width: 92%;
             background: #ffffff;
-            border: 1px solid rgba(15, 23, 42, 0.10); /* slate-900 @10% */
+            border: 1px solid rgba(15, 23, 42, 0.10);
             border-radius: 14px;
             padding: 10px 10px 9px 10px;
             text-align: center;
             box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
           }
+    
           .kpi-card__value{
             font-size: 26px;
-            font-weight: 900;
+            font-weight: 500;
             letter-spacing: -0.4px;
             color: #0f172a;
             line-height: 1.05;
           }
+    
           .kpi-prefix{
             display: inline-block;
             font-size: 12px;
-            font-weight: 800;
-            color: #475569; /* slate-600 */
+            font-weight: 500;
+            color: #475569;
             letter-spacing: 0.6px;
             margin-right: 8px;
             vertical-align: 30%;
             text-transform: uppercase;
           }
+    
           .kpi-suffix{
             font-size: 12px;
-            font-weight: 900;
+            font-weight: 500;
             color: #334155;
             margin-left: 6px;
             letter-spacing: 0.6px;
             text-transform: uppercase;
           }
+    
           .kpi-card__label{
             margin-top: 6px;
             font-size: 13px;
-            font-weight: 700;
+            font-weight: 500;
             color: #334155;
             line-height: 1.2;
           }
+    
           .kpi-card__date{
             margin-top: 4px;
             font-size: 12px;
@@ -176,6 +181,7 @@ def render_macro_home(go_to):
         """,
         unsafe_allow_html=True,
     )
+
 
     st.markdown(
         """
