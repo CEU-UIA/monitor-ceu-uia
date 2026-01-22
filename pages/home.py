@@ -1,51 +1,49 @@
+
 import base64
 import streamlit as st
 
 
-def _header_banner(image_path: str, height_px: int = 140):
+def header_banner(image_path: str):
     """
-    Banner full-width (full-bleed) con imagen de fondo.
-    Requiere: image_path (ej: assets/header_ceu.png)
+    Banner full-width, sin recorte, alto mínimo necesario,
+    pegado arriba de todo.
     """
-    try:
-        with open(image_path, "rb") as f:
-            img_base64 = base64.b64encode(f.read()).decode("utf-8")
+    with open(image_path, "rb") as f:
+        img_base64 = base64.b64encode(f.read()).decode("utf-8")
 
-        st.markdown(
-            f"""
-            <style>
-              /* Full-bleed: ocupa 100vw aunque el contenido esté en container */
-              .ceu-banner {{
-                width: 100vw;
-                height: {height_px}px;
-                margin-left: calc(-50vw + 50%);
-                background-image: url("data:image/png;base64,{img_base64}");
-                background-size: cover;
-                background-position: center;
-                border-radius: 0px;
-              }}
+    st.markdown(
+        f"""
+        <style>
+          /* Saca espacio superior default de Streamlit */
+          .block-container {{
+            padding-top: 0rem;
+          }}
 
-              /* Espacio debajo del banner (ajustable) */
-              .ceu-banner-spacer {{
-                height: 18px;
-              }}
-            </style>
+          .ceu-banner {{
+            width: 100vw;
+            aspect-ratio: 6 / 1;   /* ajusta proporción del banner */
+            margin-left: calc(-50vw + 50%);
+            margin-top: -1.5rem;
 
-            <div class="ceu-banner"></div>
-            <div class="ceu-banner-spacer"></div>
-            """,
-            unsafe_allow_html=True,
-        )
-    except Exception:
-        # Si no encuentra el archivo o falla, no rompe la home
-        st.warning("No se pudo cargar el banner (assets/header_ceu.png).")
+            background-image: url("data:image/png;base64,{img_base64}");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: contain;
+            background-color: #2f4f8f; /* azul institucional de fondo */
+          }}
+        </style>
+
+        <div class="ceu-banner"></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 
 def render_main_home(go_to):
-    # ✅ 1) Banner arriba (todo el ancho)
-    _header_banner("assets/header_ceu.png", height_px=140)
+    # Banner ARRIBA DE TODO
+    header_banner("assets/header_ceu.png")
 
-    # ✅ 2) Tu título/subtítulo como estaban
     st.markdown(
         """
         <div class="home-wrap">
@@ -72,6 +70,3 @@ def render_main_home(go_to):
                 go_to("ipi")
 
         st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("<div style='height:90px'></div>", unsafe_allow_html=True)
-
-  
