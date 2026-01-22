@@ -1,3 +1,4 @@
+
 import base64
 import streamlit as st
 
@@ -9,7 +10,7 @@ def header_banner(image_path: str):
     st.markdown(
         f"""
         <style>
-          /* Pegarlo arriba: reduce paddings default de Streamlit */
+          /* Reduce el espacio superior default */
           section.main > div {{
             padding-top: 0rem;
           }}
@@ -17,28 +18,24 @@ def header_banner(image_path: str):
             padding-top: 0rem;
           }}
 
-          /* Banner full width, sin recorte */
-          .ceu-banner {{
+          /* Imagen full-bleed real */
+          .ceu-banner-img {{
             width: 100vw;
-            aspect-ratio: 6 / 1;     /* ajustá si querés más bajo: 7/1 */
+            max-width: 100vw;
+            height: auto;
+
             margin-left: calc(-50vw + 50%);
-            margin-top: -2.2rem;     /* sube más (ajustable) */
+            margin-top: -1.6rem;  /* <- un cachitito más abajo (antes estaba más arriba) */
 
             display: block;
-            line-height: 0;
-
-            background-image: url("data:image/png;base64,{img_base64}");
-            background-repeat: no-repeat;
-            background-position: center;
-            background-size: contain;
-            background-color: #2f4f8f;
           }}
         </style>
 
-        <div class="ceu-banner"></div>
+        <img class="ceu-banner-img" src="data:image/png;base64,{img_base64}" />
         """,
         unsafe_allow_html=True,
     )
+
 
 
 def render_main_home(go_to):
