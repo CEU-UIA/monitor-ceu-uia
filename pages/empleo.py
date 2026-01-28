@@ -5,6 +5,11 @@ import streamlit as st
 from services.metrics import calc_var, fmt, obtener_nombre_mes
 from services.sipa_data import cargar_sipa_excel
 
+def fmt_es(x, dec=2):
+    if pd.isna(x):
+        return "s/d"
+    return f"{x:,.{dec}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def render_empleo(go_to):
     if st.button("← Volver"):
@@ -47,7 +52,7 @@ def render_empleo(go_to):
 
     st.subheader(f"Empleo Privado - {obtener_nombre_mes(ult_f)}")
     c1, c2, c3 = st.columns(3)
-    c1.metric("Mensual (SA)", f"{fmt(m_e)}%", delta=f"{fmt(m_p, 0, True)} puestos")
+    c1.metric("Mensual (s.e)", f"{fmt(m_e)}%", delta=f"{fmt(m_p, 0, True)} puestos")
     c2.metric("Interanual", f"{fmt(i_e)}%", delta=f"{fmt(i_p, 0, True)} puestos")
     c3.metric("vs Agosto 2023", f"{fmt(v23_pct)}%", delta=f"{fmt(v23_p, 0, True)} puestos")
 
@@ -98,12 +103,12 @@ def render_empleo(go_to):
         st.dataframe(
             pd.DataFrame(resumen).style.format(
                 {
-                    "Mensual %": "{:,.2f}%",
-                    "Mensual (puestos)": "{:,.0f}",
-                    "Interanual %": "{:,.2f}%",
-                    "Interanual (puestos)": "{:,.0f}",
-                    "vs Ago-23 %": "{:,.2f}%",
-                    "vs Ago-23 (puestos)": "{:,.0f}",
+                    "Mensual %": lambda x: fmt_es(x,2)+"%",
+                    "Mensual (puestos)":  lambda x: fmt_es(x, 0),
+                    "Interanual %": lambda x: fmt_es(x, 2) + "%",
+                    "Interanual (puestos)": lambda x: fmt_es(x, 0),
+                    "vs Ago-23 %": lambda x: fmt_es(x, 2) + "%",
+                    "vs Ago-23 (puestos)": lambda x: fmt_es(x, 0),
                 },
                 na_rep="s/d",
             ),
@@ -131,7 +136,7 @@ def render_empleo(go_to):
             iv23_pct = iv23_p = np.nan
 
         k1, k2, k3 = st.columns(3)
-        k1.metric("Mensual (SA)", f"{fmt(mi_e)}%", delta=f"{fmt(mi_p, 0, True)} puestos")
+        k1.metric("Mensual (s.e)", f"{fmt(mi_e)}%", delta=f"{fmt(mi_p, 0, True)} puestos")
         k2.metric("Interanual", f"{fmt(ii_e)}%", delta=f"{fmt(ii_p, 0, True)} puestos")
         k3.metric("vs Agosto 2023", f"{fmt(iv23_pct)}%", delta=f"{fmt(iv23_p, 0, True)} puestos")
 
@@ -177,12 +182,12 @@ def render_empleo(go_to):
         st.dataframe(
             pd.DataFrame(res_sub).style.format(
                 {
-                    "Mensual %": "{:,.2f}%",
-                    "Mensual (puestos)": "{:,.0f}",
-                    "Interanual %": "{:,.2f}%",
-                    "Interanual (puestos)": "{:,.0f}",
-                    "vs Ago-23 %": "{:,.2f}%",
-                    "vs Ago-23 (puestos)": "{:,.0f}",
+                    "Mensual %": lambda x: fmt_es(x, 2) + "%",
+                    "Mensual (puestos)": lambda x: fmt_es(x, 0),
+                    "Interanual %": lambda x: fmt_es(x, 2) + "%",
+                    "Interanual (puestos)": lambda x: fmt_es(x, 0),
+                    "vs Ago-23 %": lambda x: fmt_es(x, 2) + "%",
+                    "vs Ago-23 (puestos)": lambda x: fmt_es(x, 0),
                 },
                 na_rep="s/d",
             ),
