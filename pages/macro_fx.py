@@ -1,11 +1,12 @@
+# pages/macro_fx.py
+
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 import random
 import textwrap
-import yfinance as yf
-import streamlit.components.v1 as components  # <-- NUEVO
+import streamlit.components.v1 as components
 
 from services.macro_data import (
     build_bands_2025,
@@ -14,6 +15,12 @@ from services.macro_data import (
     get_ipc_bcra,
     get_rem_last,
     get_itcrm_excel_long,
+)
+
+# ✅ CCL desde services (NO yfinance acá)
+from services.market_data import (
+    get_ypf_ars_history,
+    get_ypf_usd_history,
 )
 
 from ui.common import safe_pct
@@ -28,56 +35,10 @@ INDU_LOADING_PHRASES = [
 ]
 
 
-# ============================================================
-# CCL (Yahoo proxy): CCL = YPFD.BA / YPF
-# ============================================================
-@st.cache_data(ttl=12 * 60 * 60)
-def get_ccl_yahoo() -> pd.DataFrame:
-    def _close_series(ticker: str, out_name: str) -> pd.Series:
-        px = yf.download(ticker, period="max", progress=False)
-
-        if isinstance(px.columns, pd.MultiIndex):
-            if ("Close", ticker) in px.columns:
-                s = px[("Close", ticker)]
-            elif ("Adj Close", ticker) in px.columns:
-                s = px[("Adj Close", ticker)]
-            else:
-                try:
-                    s = px.xs("Close", axis=1, level=0).iloc[:, 0]
-                except Exception:
-                    s = px.select_dtypes(include=[np.number]).iloc[:, 0]
-        else:
-            if "Close" in px.columns:
-                s = px["Close"]
-            elif "Adj Close" in px.columns:
-                s = px["Adj Close"]
-            else:
-                s = px.select_dtypes(include=[np.number]).iloc[:, 0]
-
-        s = pd.to_numeric(s, errors="coerce")
-        s.name = out_name
-        return s
-
-    ypf_ars = _close_series("YPFD.BA", "YPF_ARS")
-    ypf_usd = _close_series("YPF", "YPF_USD")
-
-    df = pd.concat([ypf_ars, ypf_usd], axis=1, join="outer").sort_index()
-    df["CCL"] = df["YPF_ARS"] / df["YPF_USD"]
-    df = df.dropna(subset=["CCL"]).copy()
-
-    out = df[["CCL"]].reset_index()
-    if "Date" not in out.columns:
-        out = out.rename(columns={out.columns[0]: "Date"})
-    out["Date"] = pd.to_datetime(out["Date"], errors="coerce").dt.normalize()
-    out["CCL"] = pd.to_numeric(out["CCL"], errors="coerce")
-    out = out.dropna(subset=["Date", "CCL"]).sort_values("Date").reset_index(drop=True)
-    return out
-
-
 def render_macro_fx(go_to):
 
     # =========================
-    # Botón volver (afuera del panel)
+    # Botón volver
     # =========================
     if st.button("← Volver"):
         go_to("macro_home")
@@ -89,7 +50,6 @@ def render_macro_fx(go_to):
         textwrap.dedent(
             """
         <style>
-          /* ===== HEADER ===== */
           .fx-wrap{
             background: linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
             border: 1px solid #dfeaf6;
@@ -212,19 +172,16 @@ def render_macro_fx(go_to):
 
           .fx-panel-gap{ height: 16px; }
 
-          /* ===============================
-             PANEL GRANDE REAL (aplicado por JS al contenedor de Streamlit)
-             =============================== */
+          /* PANEL GRANDE */
           .fx-panel-wrap{
             background: rgba(230, 243, 255, 0.55);
             border: 1px solid rgba(15, 55, 100, 0.10);
             border-radius: 22px;
-            padding: 16px 16px 26px 16px; /* (3) + aire abajo */
+            padding: 16px 16px 26px 16px;
             box-shadow: 0 10px 18px rgba(15,55,100,0.06);
             margin-top: 10px;
           }
 
-          /* Evitar “cortes” visuales dentro del panel */
           .fx-panel-wrap div[data-testid="stSelectbox"],
           .fx-panel-wrap div[data-testid="stMultiSelect"],
           .fx-panel-wrap div[data-testid="stSlider"],
@@ -235,7 +192,6 @@ def render_macro_fx(go_to):
             box-shadow: none !important;
           }
 
-          /* Estilo combobox base (default) */
           .fx-panel-wrap div[role="combobox"]{
             border-radius: 16px !important;
             border: 1px solid rgba(15,23,42,0.10) !important;
@@ -243,7 +199,6 @@ def render_macro_fx(go_to):
             box-shadow: 0 10px 18px rgba(15, 55, 100, 0.08) !important;
           }
 
-          /* (2) SELECTBOX "Medida" estilo chip (oscuro + texto azul) */
           .fx-panel-wrap div[data-testid="stSelectbox"] div[role="combobox"]{
             background: #0b2a55 !important;
             border: 1px solid rgba(255,255,255,0.14) !important;
@@ -255,7 +210,6 @@ def render_macro_fx(go_to):
             font-weight: 800 !important;
           }
 
-          /* Tags multiselect visibles (variable ya venía así) */
           .fx-panel-wrap span[data-baseweb="tag"]{
             background: #0b2a55 !important;
             color: #ffffff !important;
@@ -310,13 +264,21 @@ def render_macro_fx(go_to):
         bands["Date"] = pd.to_datetime(bands["Date"], errors="coerce").dt.normalize()
         bands = bands.dropna(subset=["Date", "lower", "upper"])
 
-        ccl = get_ccl_yahoo()
+        # -------------------------
+        # CCL desde services (YPF ARS / YPF USD)
+        # -------------------------
+        s_ars = get_ypf_ars_history(start="2000-01-01", prefer_adj=False)
+        s_usd = get_ypf_usd_history(start="1993-01-01", prefer_adj=False)
+
+        tmp_ccl = pd.concat([s_ars, s_usd], axis=1, join="inner").dropna()
+        tmp_ccl["CCL"] = tmp_ccl["YPF_ARS"] / tmp_ccl["YPF_USD"]
+        tmp_ccl = tmp_ccl.replace([np.inf, -np.inf], np.nan).dropna()
+
+        ccl = tmp_ccl.reset_index().rename(columns={"index": "Date"}).copy()
+        ccl["Date"] = pd.to_datetime(ccl["Date"], errors="coerce").dt.normalize()
+        ccl = ccl.dropna(subset=["Date", "CCL"]).sort_values("Date").reset_index(drop=True)
 
     fact.empty()
-
-    if fx.empty:
-        st.warning("Sin datos del tipo de cambio.")
-        return
 
     # =========================
     # Helpers
@@ -333,6 +295,27 @@ def render_macro_fx(go_to):
             return ("", "")
         return ("▲", "fx-up") if v >= 0 else ("▼", "fx-down")
 
+    # =========================================================
+    # Brecha diaria (para reusar en Brecha + TCRM (CCL))
+    # brecha% = (CCL / Oficial - 1)*100
+    # CCL asignado asof al calendario del oficial
+    # =========================================================
+    brecha_daily = pd.DataFrame(columns=["Date", "Oficial", "CCL", "Brecha"])
+    if (fx is not None and not fx.empty) and (ccl is not None and not ccl.empty):
+        ofi = fx[["Date", "FX"]].rename(columns={"FX": "Oficial"}).copy()
+        ofi["Date"] = pd.to_datetime(ofi["Date"], errors="coerce").dt.normalize()
+        ofi["Oficial"] = pd.to_numeric(ofi["Oficial"], errors="coerce")
+        ofi = ofi.dropna(subset=["Date", "Oficial"]).drop_duplicates("Date").sort_values("Date").reset_index(drop=True)
+
+        ccl_s = ccl[["Date", "CCL"]].copy()
+        ccl_s["Date"] = pd.to_datetime(ccl_s["Date"], errors="coerce").dt.normalize()
+        ccl_s["CCL"] = pd.to_numeric(ccl_s["CCL"], errors="coerce")
+        ccl_s = ccl_s.dropna(subset=["Date", "CCL"]).drop_duplicates("Date").sort_values("Date").reset_index(drop=True)
+
+        tmpb = pd.merge_asof(ofi, ccl_s, on="Date", direction="backward")
+        tmpb["Brecha"] = (tmpb["CCL"] / tmpb["Oficial"] - 1) * 100
+        brecha_daily = tmpb.dropna(subset=["Brecha"]).reset_index(drop=True)
+
     # =========================
     # Header dinámico según selección actual
     # =========================
@@ -343,11 +326,11 @@ def render_macro_fx(go_to):
 
     header_var = "CCL" if (len(vars_state) == 1 and vars_state[0] == "CCL") else "TC Mayorista"
 
-    if header_var == "CCL" and not ccl.empty:
-        hdr_df = ccl.rename(columns={"CCL": "VAL"}).copy()
+    if header_var == "CCL" and (ccl is not None and not ccl.empty):
+        hdr_df = ccl.rename(columns={"CCL": "VAL"})[["Date", "VAL"]].copy()
         label_unidad = "ARS/USD"
     else:
-        hdr_df = fx.rename(columns={"FX": "VAL"}).copy()
+        hdr_df = fx.rename(columns={"FX": "VAL"})[["Date", "VAL"]].copy()
         header_var = "TC Mayorista"
         label_unidad = "ARS/USD"
 
@@ -367,10 +350,9 @@ def render_macro_fx(go_to):
     va_txt = safe_pct(va, 1)
 
     # =========================================================
-    # PANEL GRANDE REAL: marker + JS que “marca” el contenedor
+    # PANEL GRANDE REAL: marker + JS
     # =========================================================
     st.markdown("<span id='fx_panel_marker'></span>", unsafe_allow_html=True)
-
     components.html(
         """
         <script>
@@ -378,20 +360,16 @@ def render_macro_fx(go_to):
           function applyFxPanelClass() {
             const marker = window.parent.document.getElementById('fx_panel_marker');
             if (!marker) return;
-
             const block = marker.closest('div[data-testid="stVerticalBlock"]');
             if (block) block.classList.add('fx-panel-wrap');
           }
-
           applyFxPanelClass();
-
           let tries = 0;
           const t = setInterval(() => {
             applyFxPanelClass();
             tries += 1;
             if (tries >= 10) clearInterval(t);
           }, 150);
-
           const obs = new MutationObserver(() => applyFxPanelClass());
           obs.observe(window.parent.document.body, { childList: true, subtree: true });
           setTimeout(() => obs.disconnect(), 3000);
@@ -402,7 +380,7 @@ def render_macro_fx(go_to):
     )
 
     # =========================
-    # HEADER
+    # HEADER (Tipo de cambio)
     # =========================
     header_lines = [
         '<div class="fx-wrap">',
@@ -468,22 +446,25 @@ def render_macro_fx(go_to):
     # =========================
     fx_min = pd.to_datetime(fx["Date"].min())
     last_fx_date = pd.to_datetime(fx["Date"].max())
-    last_ccl_date = pd.to_datetime(ccl["Date"].max()) if not ccl.empty else pd.NaT
+    last_ccl_date = pd.to_datetime(ccl["Date"].max()) if (ccl is not None and not ccl.empty) else pd.NaT
     bands_max = pd.to_datetime(bands["Date"].max()) if not bands.empty else pd.NaT
 
     full_end = max(d for d in [last_fx_date, last_ccl_date, bands_max] if pd.notna(d))
     cal = pd.DataFrame({"Date": pd.date_range(fx_min, full_end, freq="D")})
 
+    ccl_panel = ccl[["Date", "CCL"]].copy() if (ccl is not None and not ccl.empty and "CCL" in ccl.columns) else pd.DataFrame(columns=["Date", "CCL"])
+
     df = (
         cal.merge(fx, on="Date", how="left")
-           .merge(bands, on="Date", how="left")
-           .merge(ccl, on="Date", how="left")
-           .sort_values("Date")
-           .reset_index(drop=True)
+        .merge(bands, on="Date", how="left")
+        .merge(ccl_panel, on="Date", how="left")
+        .sort_values("Date")
+        .reset_index(drop=True)
     )
 
     df["FX"] = df["FX"].ffill()
     df.loc[df["Date"] > last_fx_date, "FX"] = np.nan
+
     df["CCL"] = df["CCL"].ffill()
     if pd.notna(last_ccl_date):
         df.loc[df["Date"] > last_ccl_date, "CCL"] = np.nan
@@ -520,11 +501,10 @@ def render_macro_fx(go_to):
         df_plot = df_plot[df_plot["Date"] <= bands_max]
 
     # =========================
-    # PLOT
+    # PLOT (Tipo de cambio)
     # =========================
     fig = go.Figure()
 
-    # (1) Bandas más claras
     band_line = "rgba(35, 120, 200, 0.55)"
     band_fill = "rgba(35, 120, 200, 0.08)"
 
@@ -554,17 +534,28 @@ def render_macro_fx(go_to):
 
         if medida == "Variación acumulada":
             base = y.dropna().iloc[0]
-            y = (y / base - 1) * 100
-            fig.add_trace(go.Scatter(x=df_plot["Date"], y=y, name=v, mode="lines", hovertemplate="%{x|%d/%m/%Y}<br>Variación acumulada: %{y:.2f}%<extra></extra>"))
+            y2 = (y / base - 1) * 100
+            fig.add_trace(
+                go.Scatter(
+                    x=df_plot["Date"],
+                    y=y2,
+                    name=v,
+                    mode="lines",
+                    hovertemplate="%{x|%d/%m/%Y}<br>Variación acumulada: %{y:.2f}%<extra></extra>",
+                )
+            )
         else:
             fig.add_trace(go.Scatter(x=df_plot["Date"], y=y, name=v, mode="lines"))
 
-    fig.update_layout(height=520, hovermode="x", margin=dict(l=10, r=10, t=10, b=40), legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1.0), dragmode=False)
+    fig.update_layout(
+        height=520,
+        hovermode="x",
+        margin=dict(l=10, r=10, t=10, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1.0),
+        dragmode=False,
+    )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
 
-    # =========================
-    # CSV + Fuente
-    # =========================
     st.download_button(
         "⬇️ Descargar CSV",
         df_plot.to_csv(index=False).encode("utf-8"),
@@ -574,13 +565,16 @@ def render_macro_fx(go_to):
 
     st.markdown(
         "<div style='color:rgba(20,50,79,0.70); font-size:12px;'>"
-        "Fuente: CEU-UIA en base a BCRA y Yahoo Finance."
+        "Fuente: CEU-UIA en base a BCRA y Yahoo Finance (proxy CCL: YPFD.BA/YPF)."
         "</div>",
         unsafe_allow_html=True,
     )
 
+
     # =========================================================
-    # TIPO DE CAMBIO REAL (ITCRM + bilaterales) — FORMATO NUEVO
+    # TIPO DE CAMBIO REAL (ITCRM + bilaterales)
+    # + variable sintética: "ITCRM (CCL)" = ITCRM * (1 + brecha%)
+    # brecha% asof sobre fechas del TCRM (último inmediato)
     # =========================================================
     st.divider()
 
@@ -590,7 +584,6 @@ def render_macro_fx(go_to):
     if tcr_long is None or tcr_long.empty:
         st.warning("Sin datos de ITCRM.")
     else:
-        # Normalización mínima
         tcr_long = tcr_long.copy()
         tcr_long["Date"] = pd.to_datetime(tcr_long["Date"], errors="coerce").dt.normalize()
         tcr_long["Value"] = pd.to_numeric(tcr_long["Value"], errors="coerce")
@@ -603,12 +596,16 @@ def render_macro_fx(go_to):
         options = [s for s in preferred if s in series_all]
         options += [s for s in sorted(series_all) if s not in options]
 
+        # ✅ Agregar "ITCRM (CCL)" como variable (solo si existe ITCRM base)
+        if "ITCRM " in options and "ITCRM (CCL)" not in options:
+            options.insert(options.index("ITCRM ") + 1, "ITCRM (CCL)")
+
         if not options:
             st.warning("No se encontraron series de ITCRM en el Excel.")
         else:
             st.markdown("<div class='tcr-panel-start'></div>", unsafe_allow_html=True)
 
-            # --- CSS del panel TCR (solo (3): + aire abajo)
+            # --- CSS panel TCR
             st.markdown(
                 """
                 <style>
@@ -616,7 +613,7 @@ def render_macro_fx(go_to):
                     background: rgba(230, 243, 255, 0.55);
                     border: 1px solid rgba(15, 55, 100, 0.10);
                     border-radius: 22px;
-                    padding: 14px 14px 26px 14px; /* (3) + aire abajo */
+                    padding: 14px 14px 26px 14px;
                     box-shadow: 0 10px 18px rgba(15,55,100,0.06);
                     margin-top: 10px;
                 }
@@ -646,7 +643,7 @@ def render_macro_fx(go_to):
                     box-shadow: 0 10px 18px rgba(15, 55, 100, 0.08) !important;
                 }
 
-                /* (2) Selectbox medida también “chip” en TCR */
+                /* Selectbox medida “chip” en TCR */
                 section.main div[data-testid="stVerticalBlock"]:has(.tcr-panel-start)
                 div[data-testid="stSelectbox"] div[role="combobox"]{
                     background: #0b2a55 !important;
@@ -679,7 +676,8 @@ def render_macro_fx(go_to):
             default_main = "ITCRM " if "ITCRM " in options else (options[0] if options else "")
             default_tcr_vars = st.session_state.get("tcr_vars", [default_main])
 
-            if "tcr_medida" not in st.session_state:
+            # ✅ Medida: SOLO Nivel / Variación acumulada (NO TCRM (CCL))
+            if st.session_state.get("tcr_medida") not in ["Nivel", "Variación acumulada"]:
                 st.session_state["tcr_medida"] = "Nivel"
 
             def _asof_tcr(df_: pd.DataFrame, target: pd.Timestamp):
@@ -689,10 +687,13 @@ def render_macro_fx(go_to):
                     return None
                 return float(tt["Value"].iloc[-1])
 
+            # para el header: si seleccionan ITCRM (CCL), el header sigue mostrando ITCRM base (más estable)
             tcr_vars_now = st.session_state.get("tcr_vars", [default_main])
             if not tcr_vars_now:
                 tcr_vars_now = [default_main]
             main_series = tcr_vars_now[0]
+            if main_series == "ITCRM (CCL)":
+                main_series = "ITCRM " if "ITCRM " in options else default_main
 
             tcr_main = tcr_long[tcr_long["Serie"] == main_series].sort_values("Date")
             last_tcr_date = pd.to_datetime(tcr_main["Date"].iloc[-1]) if not tcr_main.empty else pd.NaT
@@ -750,7 +751,6 @@ def render_macro_fx(go_to):
                 tcr_medida = st.selectbox(
                     "",
                     ["Nivel", "Variación acumulada"],
-                    index=0 if st.session_state.get("tcr_medida", "Nivel") == "Nivel" else 1,
                     label_visibility="collapsed",
                     key="tcr_medida",
                 )
@@ -782,11 +782,30 @@ def render_macro_fx(go_to):
 
             df2 = cal2.merge(wide, on="Date", how="left").sort_values("Date").reset_index(drop=True)
 
-            for s in options:
+            # ffill respetando último dato por serie
+            for s in series_all:
                 if s in df2.columns:
                     last_s_date = tcr_long.loc[tcr_long["Serie"] == s, "Date"].max()
                     df2[s] = pd.to_numeric(df2[s], errors="coerce").ffill()
                     df2.loc[df2["Date"] > pd.to_datetime(last_s_date), s] = np.nan
+
+            # ---- brecha asof sobre fechas TCRM (último inmediato)
+            if brecha_daily is not None and not brecha_daily.empty:
+                b = brecha_daily[["Date", "Brecha"]].dropna().sort_values("Date").reset_index(drop=True)
+                df2 = pd.merge_asof(df2.sort_values("Date"), b, on="Date", direction="backward")
+            else:
+                df2["Brecha"] = np.nan
+
+            df2["TCRM_factor_ccl"] = 1.0 + (pd.to_numeric(df2["Brecha"], errors="coerce") / 100.0)
+
+            # ✅ variable sintética ITCRM (CCL)
+            if "ITCRM " in df2.columns:
+                df2["ITCRM (CCL)"] = (
+                    pd.to_numeric(df2["ITCRM "], errors="coerce")
+                    * pd.to_numeric(df2["TCRM_factor_ccl"], errors="coerce")
+                )
+            else:
+                df2["ITCRM (CCL)"] = np.nan
 
             sel_cols2 = [s for s in tcr_vars if s in df2.columns]
             mask_any2 = df2[sel_cols2].notna().any(axis=1) if sel_cols2 else (df2["Date"].notna())
@@ -821,15 +840,14 @@ def render_macro_fx(go_to):
 
             if tcr_medida == "Variación acumulada":
                 hover2 = "%{x|%d/%m/%Y}<br>Variación acumulada: %{y:.2f}%<extra></extra>"
-                y_title2 = "%"
             else:
                 hover2 = "%{x|%d/%m/%Y}<br>Valor: %{y:.2f}<extra></extra>"
-                y_title2 = ""
 
             for s in tcr_vars:
                 if s not in df2_plot.columns:
                     continue
-                y = df2_plot[s].copy()
+
+                y = pd.to_numeric(df2_plot[s], errors="coerce").copy()
 
                 if tcr_medida == "Variación acumulada":
                     base_series = y.dropna()
@@ -851,14 +869,23 @@ def render_macro_fx(go_to):
                     )
                 )
 
-            fig2.update_layout(height=520, hovermode="x", margin=dict(l=10, r=10, t=10, b=40), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1.0), dragmode=False)
+            fig2.update_layout(
+                height=520,
+                hovermode="x",
+                margin=dict(l=10, r=10, t=10, b=40),
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1.0),
+                dragmode=False,
+            )
 
             st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
 
+            export_cols = ["Date"] + [s for s in tcr_vars if s in df2_plot.columns]
+            export2 = df2_plot[export_cols].copy().rename(columns={"Date": "date"})
 
-
-            export2 = df2_plot[["Date"] + [s for s in tcr_vars if s in df2_plot.columns]].copy()
-            export2 = export2.rename(columns={"Date": "date"})
+            # Siempre útil si exportan ITCRM (CCL)
+            if "ITCRM (CCL)" in export2.columns:
+                export2["brecha_pct_asof"] = df2_plot["Brecha"]
 
             st.download_button(
                 label="⬇️ Descargar CSV",
@@ -871,20 +898,19 @@ def render_macro_fx(go_to):
 
             st.markdown(
                 "<div style='color:rgba(20,50,79,0.70); font-size:12px; margin-top:10px;'>"
-                "Fuente: BCRA — ITCRMSerie.xlsx."
+                "Fuente: BCRA — ITCRMSerie.xlsx. CCL proxy: YPFD.BA/YPF (Yahoo Finance). Brecha as-of."
                 "</div>",
                 unsafe_allow_html=True,
             )
 
 
+
+
     # =========================================================
-    # BRECHA CAMBIARIA (CCL vs Oficial/Mayorista)
+    # BRECHA CAMBIARIA (CCL vs Oficial) — 3er bloque
+    # usa brecha_daily (as-of sobre oficial)
     # =========================================================
     st.divider()
-
-    with st.spinner("Cargando brecha cambiaria..."):
-        df_ofi = get_a3500()         # columnas: Date, FX
-        df_ccl = get_ccl_yahoo()     # columnas: Date, CCL
 
     def _fmt_pct_es(x: float, dec: int = 1) -> str:
         try:
@@ -895,214 +921,169 @@ def render_macro_fx(go_to):
             return "—"
 
     def _asof_val(df_: pd.DataFrame, target: pd.Timestamp):
-        """df_ debe tener columnas Date y Value"""
         tt = df_.dropna(subset=["Date", "Value"]).sort_values("Date")
         tt = tt[tt["Date"] <= target]
         if tt.empty:
             return None
         return float(tt["Value"].iloc[-1])
 
-    if df_ofi is None or df_ccl is None or df_ofi.empty or df_ccl.empty:
+    if brecha_daily is None or brecha_daily.empty:
         st.warning("Sin datos para calcular brecha (CCL u Oficial).")
-    else:
-        # --- Normalizar
-        ofi = df_ofi.copy()
-        ccl = df_ccl.copy()
+        return
 
-        ofi["Date"] = pd.to_datetime(ofi["Date"], errors="coerce").dt.normalize()
-        ccl["Date"] = pd.to_datetime(ccl["Date"], errors="coerce").dt.normalize()
+    st.markdown("<div class='brecha-panel-start'></div>", unsafe_allow_html=True)
 
-        # Nombres reales del proyecto
-        if "FX" not in ofi.columns:
-            st.error(f"A3500 no trae columna FX. Columnas: {ofi.columns.tolist()}")
-            st.stop()
-        if "CCL" not in ccl.columns:
-            st.error(f"CCL no trae columna CCL. Columnas: {ccl.columns.tolist()}")
-            st.stop()
+    st.markdown(
+        """
+        <style>
+        section.main div[data-testid="stVerticalBlock"]:has(.brecha-panel-start){
+            background: rgba(245, 247, 250, 0.85);
+            border: 1px solid rgba(15, 23, 42, 0.10);
+            border-radius: 22px;
+            padding: 14px 14px 26px 14px;
+            box-shadow: 0 10px 18px rgba(15,23,42,0.06);
+            margin-top: 10px;
+        }
 
-        ofi["FX"] = pd.to_numeric(ofi["FX"], errors="coerce")
-        ccl["CCL"] = pd.to_numeric(ccl["CCL"], errors="coerce")
+        section.main div[data-testid="stVerticalBlock"]:has(.brecha-panel-start)
+        div[data-testid="stSlider"],
+        section.main div[data-testid="stVerticalBlock"]:has(.brecha-panel-start)
+        div[data-testid="stPlotlyChart"],
+        section.main div[data-testid="stVerticalBlock"]:has(.brecha-panel-start)
+        div[data-testid="stDownloadButton"]{
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        ofi = ofi.dropna(subset=["Date", "FX"]).sort_values("Date")
-        ccl = ccl.dropna(subset=["Date", "CCL"]).sort_values("Date")
+    df_ok = brecha_daily.copy().sort_values("Date").reset_index(drop=True)
 
-        if ofi.empty or ccl.empty:
-            st.warning("Sin datos suficientes para calcular brecha.")
-        else:
-            st.markdown("<div class='brecha-panel-start'></div>", unsafe_allow_html=True)
+    last_row = df_ok.iloc[-1]
+    last_date = pd.to_datetime(last_row["Date"])
+    last_brecha = float(last_row["Brecha"])
 
-            # --- CSS del panel (similar a TCR, sin doble caja)
-            st.markdown(
-                """
-                <style>
-                section.main div[data-testid="stVerticalBlock"]:has(.brecha-panel-start){
-                    background: rgba(245, 247, 250, 0.85);
-                    border: 1px solid rgba(15, 23, 42, 0.10);
-                    border-radius: 22px;
-                    padding: 14px 14px 26px 14px;
-                    box-shadow: 0 10px 18px rgba(15,23,42,0.06);
-                    margin-top: 10px;
-                }
+    brecha_series = df_ok[["Date", "Brecha"]].rename(columns={"Brecha": "Value"}).copy()
+    b_m = _asof_val(brecha_series, last_date - pd.Timedelta(days=30))
+    b_y = _asof_val(brecha_series, last_date - pd.Timedelta(days=365))
 
-                section.main div[data-testid="stVerticalBlock"]:has(.brecha-panel-start)
-                div[data-testid="stSlider"],
-                section.main div[data-testid="stVerticalBlock"]:has(.brecha-panel-start)
-                div[data-testid="stPlotlyChart"],
-                section.main div[data-testid="stVerticalBlock"]:has(.brecha-panel-start)
-                div[data-testid="stDownloadButton"]{
-                    background: transparent !important;
-                    border: none !important;
-                    box-shadow: none !important;
-                    padding: 0 !important;
-                    margin: 0 !important;
-                }
-                </style>
-                """,
-                unsafe_allow_html=True,
-            )
+    vm = None if b_m is None else (last_brecha - b_m)  # pp
+    va = None if b_y is None else (last_brecha - b_y)  # pp
 
-            # --- Merge diario (solo rango donde existan ambas)
-            min_date = max(ofi["Date"].min(), ccl["Date"].min())
-            max_date = min(ofi["Date"].max(), ccl["Date"].max())
+    a_vm, cls_vm = _arrow_cls(vm)
+    a_va, cls_va = _arrow_cls(va)
 
-            cal = pd.DataFrame({"Date": pd.date_range(min_date, max_date, freq="D")})
+    header_lines = [
+        '<div class="fx-wrap">',
+        '  <div class="fx-title-row">',
+        '    <div class="fx-icon-badge">📉</div>',
+        '    <div class="fx-title">Brecha cambiaria</div>',
+        "  </div>",
+        '  <div class="fx-card">',
+        '    <div class="fx-row">',
+        f'      <div class="fx-value">{_fmt_pct_es(last_brecha, 1)}%</div>',
+        '      <div class="fx-meta">',
+        f'        CCL vs Oficial<span class="sep">|</span>{last_date.strftime("%d/%m/%Y")}',
+        "      </div>",
+        '      <div class="fx-pills">',
+        '        <div class="fx-pill red">',
+        f'          <span class="fx-arrow {cls_vm}">{a_vm}</span>',
+        f'          <span class="{cls_vm}">{_fmt_pct_es(vm, 1)} pp</span>',
+        '          <span class="lab">mensual</span>',
+        "        </div>",
+        '        <div class="fx-pill green">',
+        f'          <span class="fx-arrow {cls_va}">{a_va}</span>',
+        f'          <span class="{cls_va}">{_fmt_pct_es(va, 1)} pp</span>',
+        '          <span class="lab">interanual</span>',
+        "        </div>",
+        "      </div>",
+        "    </div>",
+        "  </div>",
+        "</div>",
+    ]
+    st.markdown("\n".join(header_lines), unsafe_allow_html=True)
 
-            ofi_w = ofi[["Date", "FX"]].rename(columns={"FX": "Oficial"})
-            ccl_w = ccl[["Date", "CCL"]].rename(columns={"CCL": "CCL"})
+    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
-            df = (
-                cal.merge(ofi_w, on="Date", how="left")
-                .merge(ccl_w, on="Date", how="left")
-                .sort_values("Date")
-                .reset_index(drop=True)
-            )
+    min_d = df_ok["Date"].min().date()
+    max_d = df_ok["Date"].max().date()
+    default_start = (pd.to_datetime(df_ok["Date"].max()) - pd.Timedelta(days=365)).date()
+    if default_start < min_d:
+        default_start = min_d
 
-            df["Oficial"] = pd.to_numeric(df["Oficial"], errors="coerce").ffill()
-            df["CCL"] = pd.to_numeric(df["CCL"], errors="coerce").ffill()
+    st.markdown("<div class='fx-panel-title'>Rango de fechas</div>", unsafe_allow_html=True)
+    start_b, end_b = st.slider(
+        label="",
+        min_value=min_d,
+        max_value=max_d,
+        value=(default_start, max_d),
+        format="YYYY-MM-DD",
+        label_visibility="collapsed",
+        key="brecha_rangebar",
+    )
 
-            # Brecha en %
-            df["Brecha"] = (df["CCL"] / df["Oficial"] - 1) * 100
+    df_plot = df_ok[(df_ok["Date"] >= pd.Timestamp(start_b)) & (df_ok["Date"] <= pd.Timestamp(end_b))].copy()
 
-            df_ok = df.dropna(subset=["Brecha"]).sort_values("Date")
-            if df_ok.empty:
-                st.warning("No se pudo calcular brecha (faltan datos cruzados).")
-            else:
-                last_row = df_ok.iloc[-1]
-                last_date = pd.to_datetime(last_row["Date"])
-                last_brecha = float(last_row["Brecha"])
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df_plot["Date"],
+            y=df_plot["Brecha"],
+            name="Brecha (%)",
+            mode="lines",
+            connectgaps=True,
+            hovertemplate="%{x|%d/%m/%Y}<br>Brecha: %{y:.2f}%<extra></extra>",
+        )
+    )
 
-                # Serie para asof (Date, Value)
-                brecha_series = df_ok[["Date", "Brecha"]].rename(columns={"Brecha": "Value"}).copy()
+    fig.update_layout(
+        height=520,
+        hovermode="x",
+        margin=dict(l=10, r=10, t=10, b=40),
+        showlegend=False,
+        dragmode=False,
+        yaxis_title="%",
+    )
 
-                b_m = _asof_val(brecha_series, last_date - pd.Timedelta(days=30))
-                b_y = _asof_val(brecha_series, last_date - pd.Timedelta(days=365))
+    last_date_x = df_plot["Date"].max()
+    fig.update_xaxes(range=[df_plot["Date"].min(), last_date_x + pd.Timedelta(days=10)])
 
-                vm = None if b_m is None else (last_brecha - b_m)  # diferencia en puntos porcentuales, pero mostramos como %
-                va = None if b_y is None else (last_brecha - b_y)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
 
-                a_vm, cls_vm = _arrow_cls(vm)
-                a_va, cls_va = _arrow_cls(va)
+    # Export: agregamos YPF_ARS/YPF_USD asof para que sea útil en finanzas también
+    export = df_plot[["Date", "Oficial", "CCL", "Brecha"]].copy()
+    if ccl is not None and not ccl.empty:
+        ccl_cols = ccl[["Date", "YPF_ARS", "YPF_USD"]].dropna().sort_values("Date").reset_index(drop=True)
+        export = pd.merge_asof(export.sort_values("Date"), ccl_cols, on="Date", direction="backward")
 
-                # --- Header (%)
-                header_lines = [
-                    '<div class="fx-wrap">',
-                    '  <div class="fx-title-row">',
-                    '    <div class="fx-icon-badge">📉</div>',
-                    '    <div class="fx-title">Brecha cambiaria</div>',
-                    "  </div>",
-                    '  <div class="fx-card">',
-                    '    <div class="fx-row">',
-                    f'      <div class="fx-value">{_fmt_pct_es(last_brecha, 1)}%</div>',
-                    '      <div class="fx-meta">',
-                    f'        CCL vs Oficial<span class="sep">|</span>{last_date.strftime("%d/%m/%Y")}',
-                    "      </div>",
-                    '      <div class="fx-pills">',
-                    '        <div class="fx-pill red">',
-                    f'          <span class="fx-arrow {cls_vm}">{a_vm}</span>',
-                    f'          <span class="{cls_vm}">{_fmt_pct_es(vm, 1)} pp</span>',
-                    '          <span class="lab">mensual</span>',
-                    "        </div>",
-                    '        <div class="fx-pill green">',
-                    f'          <span class="fx-arrow {cls_va}">{a_va}</span>',
-                    f'          <span class="{cls_va}">{_fmt_pct_es(va, 1)} pp</span>',
-                    '          <span class="lab">interanual</span>',
-                    "        </div>",
-                    "      </div>",
-                    "    </div>",
-                    "  </div>",
-                    "</div>",
-                ]
-                st.markdown("\n".join(header_lines), unsafe_allow_html=True)
+    export = export.rename(
+        columns={
+            "Date": "date",
+            "Brecha": "brecha_pct",
+            "Oficial": "oficial",
+            "CCL": "ccl",
+            "YPF_ARS": "ypf_ars",
+            "YPF_USD": "ypf_usd",
+        }
+    )
 
-                st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+    st.download_button(
+        label="⬇️ Descargar CSV",
+        data=export.to_csv(index=False).encode("utf-8"),
+        file_name=f"brecha_{pd.Timestamp(end_b).strftime('%Y-%m-%d')}.csv",
+        mime="text/csv",
+        use_container_width=False,
+        key="dl_brecha_csv",
+    )
 
-                # --- Slider rango
-                min_d = df_ok["Date"].min().date()
-                max_d = df_ok["Date"].max().date()
-
-                default_start = (pd.to_datetime(df_ok["Date"].max()) - pd.Timedelta(days=365)).date()
-                if default_start < min_d:
-                    default_start = min_d
-
-                st.markdown("<div class='fx-panel-title'>Rango de fechas</div>", unsafe_allow_html=True)
-                start_b, end_b = st.slider(
-                    label="",
-                    min_value=min_d,
-                    max_value=max_d,
-                    value=(default_start, max_d),
-                    format="YYYY-MM-DD",
-                    label_visibility="collapsed",
-                    key="brecha_rangebar",
-                )
-
-                df_plot = df_ok[(df_ok["Date"] >= pd.Timestamp(start_b)) & (df_ok["Date"] <= pd.Timestamp(end_b))].copy()
-
-                # --- Gráfico
-                fig = go.Figure()
-                fig.add_trace(
-                    go.Scatter(
-                        x=df_plot["Date"],
-                        y=df_plot["Brecha"],
-                        name="Brecha (%)",
-                        mode="lines",
-                        connectgaps=True,
-                        hovertemplate="%{x|%d/%m/%Y}<br>Brecha: %{y:.2f}%<extra></extra>",
-                    )
-                )
-
-                fig.update_layout(
-                    height=520,
-                    hovermode="x",
-                    margin=dict(l=10, r=10, t=10, b=40),
-                    showlegend=False,
-                    dragmode=False,
-                    yaxis_title="%",
-                )
-
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True,
-                    config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
-                )
-
-                # --- Export CSV
-                export = df_plot[["Date", "CCL", "Oficial", "Brecha"]].copy()
-                export = export.rename(
-                    columns={"Date": "date", "Brecha": "brecha_pct", "Oficial": "oficial", "CCL": "ccl"}
-                )
-
-                st.download_button(
-                    label="⬇️ Descargar CSV",
-                    data=export.to_csv(index=False).encode("utf-8"),
-                    file_name=f"brecha_{pd.Timestamp(end_b).strftime('%Y-%m-%d')}.csv",
-                    mime="text/csv",
-                    use_container_width=False,
-                    key="dl_brecha_csv",
-                )
-
-                st.markdown(
-                    "<div style='color:rgba(20,50,79,0.70); font-size:12px; margin-top:10px;'>"
-                    "Fuente: CCL (Yahoo proxy) y Tipo de cambio mayorista A3500 (BCRA)."
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
+    st.markdown(
+        "<div style='color:rgba(20,50,79,0.70); font-size:12px; margin-top:10px;'>"
+        "Fuente: Yahoo Finance (proxy CCL: YPFD.BA y YPF) y tipo de cambio mayorista A3500 (BCRA)."
+        "</div>",
+        unsafe_allow_html=True,
+    )
