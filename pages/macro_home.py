@@ -2,8 +2,14 @@ import streamlit as st
 import pandas as pd
 import random
 import numpy as np
+import io
+import requests
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# yfinance opcional (ticker)
+# yfinance opcional
 try:
     import yfinance as yf
 except Exception:
@@ -13,7 +19,6 @@ from services.macro_data import (
     get_a3500,
     get_monetaria_serie,
     get_ipc_bcra,
-    get_emae_original,
 )
 
 # ============================================================
@@ -68,37 +73,63 @@ def _fmt_mes_anio_es(dt: pd.Timestamp) -> str:
 
 
 # ============================================================
-# Últimos datos (cacheados)
+# Cache wrappers (para no repetir descargas/procesos)
 # ============================================================
-@st.cache_data(ttl=12 * 60 * 60)
-def _last_tc():
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
+def _a3500_cached() -> pd.DataFrame:
     df = get_a3500()
     if df is None or df.empty:
-        return None, None
+        return pd.DataFrame()
+    df = df.copy()
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.normalize()
+    if "FX" in df.columns:
+        df["FX"] = pd.to_numeric(df["FX"], errors="coerce")
     df = df.dropna(subset=["Date", "FX"]).sort_values("Date")
-    if df.empty:
+    return df
+
+
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
+def _monetaria_cached(serie_id: int) -> pd.DataFrame:
+    df = get_monetaria_serie(serie_id)
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df = df.copy()
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.normalize()
+    if "value" in df.columns:
+        df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = df.dropna(subset=["Date", "value"]).sort_values("Date")
+    return df
+
+
+# ============================================================
+# Últimos datos
+# ============================================================
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
+def _last_tc():
+    df = _a3500_cached()
+    if df is None or df.empty:
         return None, None
     r = df.iloc[-1]
     return float(r["FX"]), pd.to_datetime(r["Date"])
 
 
-@st.cache_data(ttl=12 * 60 * 60)
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
 def _last_tasa(default_id: int = 13):
-    df = get_monetaria_serie(default_id)
+    df = _monetaria_cached(int(default_id))
     if df is None or df.empty:
-        return None, None
-    df = df.dropna(subset=["Date", "value"]).sort_values("Date")
-    if df.empty:
         return None, None
     r = df.iloc[-1]
     return float(r["value"]), pd.to_datetime(r["Date"])
 
 
-@st.cache_data(ttl=12 * 60 * 60)
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
 def _last_ipc_bcra():
     df = get_ipc_bcra()
     if df is None or df.empty:
         return None, None
+    df = df.copy()
     df = df.dropna(subset=["Date", "v_m_CPI"]).sort_values("Date")
     if df.empty:
         return None, None
@@ -106,93 +137,55 @@ def _last_ipc_bcra():
     return float(r["v_m_CPI"]), pd.to_datetime(r["Date"])
 
 
-@st.cache_data(ttl=12 * 60 * 60)
-def _last_emae_yoy():
-    df = get_emae_original()
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
+def _last_reservas():
+    df = _monetaria_cached(1)
     if df is None or df.empty:
         return None, None
-    df = df.dropna(subset=["Date", "Value"]).sort_values("Date").copy()
-    df["YoY"] = (df["Value"] / df["Value"].shift(12) - 1) * 100
-    df = df.dropna(subset=["YoY"])
-    if df.empty:
-        return None, None
     r = df.iloc[-1]
-    return float(r["YoY"]), pd.to_datetime(r["Date"])
+    return float(r["value"]), pd.to_datetime(r["Date"])
 
 
-@st.cache_data(ttl=12 * 60 * 60)
-def _last_brecha_from_macro_fx():
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
+def _last_riesgo_pais():
     """
-    Trae CCL desde pages/macro_fx.py (como pediste) y calcula brecha.
-    Si el import falla, devuelve (None, None) sin romper el home.
+    Riesgo País (puntos básicos).
+    Import lazy desde pages/finanzas, pero cacheado por TTL.
     """
     try:
-        from pages.macro_fx import get_ccl_yahoo  # debe existir en macro_fx
+        from pages.finanzas import _load_riesgo_pais
     except Exception:
         return None, None
 
-    df_ofi = get_a3500()         # Date, FX
-    df_ccl = get_ccl_yahoo()     # Date, CCL
-
-    if df_ofi is None or df_ccl is None or df_ofi.empty or df_ccl.empty:
+    try:
+        df = _load_riesgo_pais()
+    except Exception:
         return None, None
 
-    ofi = df_ofi.copy()
-    ccl = df_ccl.copy()
-
-    ofi["Date"] = pd.to_datetime(ofi["Date"], errors="coerce").dt.normalize()
-    ccl["Date"] = pd.to_datetime(ccl["Date"], errors="coerce").dt.normalize()
-
-    if "FX" not in ofi.columns or "CCL" not in ccl.columns:
-        return None, None
-
-    ofi["FX"] = pd.to_numeric(ofi["FX"], errors="coerce")
-    ccl["CCL"] = pd.to_numeric(ccl["CCL"], errors="coerce")
-
-    ofi = ofi.dropna(subset=["Date", "FX"]).sort_values("Date")
-    ccl = ccl.dropna(subset=["Date", "CCL"]).sort_values("Date")
-
-    if ofi.empty or ccl.empty:
-        return None, None
-
-    min_date = max(ofi["Date"].min(), ccl["Date"].min())
-    max_date = min(ofi["Date"].max(), ccl["Date"].max())
-    if pd.isna(min_date) or pd.isna(max_date) or min_date > max_date:
-        return None, None
-
-    cal = pd.DataFrame({"Date": pd.date_range(min_date, max_date, freq="D")})
-    df = (
-        cal.merge(ofi[["Date", "FX"]], on="Date", how="left")
-           .merge(ccl[["Date", "CCL"]], on="Date", how="left")
-           .sort_values("Date")
-           .reset_index(drop=True)
-    )
-
-    df["FX"] = pd.to_numeric(df["FX"], errors="coerce").ffill()
-    df["CCL"] = pd.to_numeric(df["CCL"], errors="coerce").ffill()
-    df["Brecha"] = (df["CCL"] / df["FX"] - 1) * 100
-
-    df_ok = df.dropna(subset=["Brecha"]).sort_values("Date")
-    if df_ok.empty:
-        return None, None
-
-    last = df_ok.iloc[-1]
-    return float(last["Brecha"]), pd.to_datetime(last["Date"])
-
-
-@st.cache_data(ttl=12 * 60 * 60)
-def _last_reservas():
-    """
-    Reservas internacionales brutas (BCRA) – id serie=1 (millones de USD)
-    """
-    df = get_monetaria_serie(1)
     if df is None or df.empty:
         return None, None
 
     df = df.copy()
+
+    if "Date" not in df.columns:
+        for c in ["date", "fecha", "Fecha"]:
+            if c in df.columns:
+                df = df.rename(columns={c: "Date"})
+                break
+
+    if "value" not in df.columns:
+        for c in ["Value", "valor", "riesgo_pais", "Riesgo País", "Riesgo Pais"]:
+            if c in df.columns:
+                df = df.rename(columns={c: "value"})
+                break
+
+    if "Date" not in df.columns or "value" not in df.columns:
+        return None, None
+
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.normalize()
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
     df = df.dropna(subset=["Date", "value"]).sort_values("Date")
+
     if df.empty:
         return None, None
 
@@ -201,58 +194,425 @@ def _last_reservas():
 
 
 # ============================================================
-# Ticker tape – yfinance
+# Brecha (estable: última fecha común + fallback asof)
 # ============================================================
-@st.cache_data(ttl=120, show_spinner=False)
-def _get_daily_changes(symbols: list[str]) -> dict[str, float | None]:
-    if yf is None:
-        return {s: None for s in symbols}
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
+def _last_brecha_from_macro_fx():
+    """
+    Brecha = CCL / Oficial - 1.
+    Estable: usa última fecha común exacta; si no hay, merge_asof con tolerancia.
+    Rápido: usa tail() para no mergear todo.
+    """
+    # ✅ CCL desde services (evita import circular con pages.macro_fx)
+    try:
+        from services.market_data import get_ccl_ypf_df
+    except Exception:
+        return None, None
+
+    ofi = _a3500_cached()
+    if ofi is None or ofi.empty or "Date" not in ofi.columns or "FX" not in ofi.columns:
+        return None, None
 
     try:
-        df = yf.download(
-            tickers=" ".join(symbols),
-            period="7d",
-            interval="1d",
-            group_by="ticker",
-            auto_adjust=False,
-            threads=True,
-            progress=False,
-        )
-
-        changes: dict[str, float | None] = {}
-        for s in symbols:
-            try:
-                close = df[(s, "Close")].dropna()
-                if len(close) < 2:
-                    changes[s] = None
-                else:
-                    prev = float(close.iloc[-2])
-                    last = float(close.iloc[-1])
-                    changes[s] = (last / prev - 1) * 100
-            except Exception:
-                changes[s] = None
-
-        return changes
+        ccl = get_ccl_ypf_df(start="2000-01-01", prefer_adj=False)
     except Exception:
-        return {s: None for s in symbols}
+        return None, None
+
+    if ccl is None or ccl.empty or "Date" not in ccl.columns:
+        return None, None
+
+    # --- normalizaciones mínimas
+    ofi = ofi.copy()
+    ofi["Date"] = pd.to_datetime(ofi["Date"], errors="coerce").dt.normalize()
+    ofi["FX"] = pd.to_numeric(ofi["FX"], errors="coerce")
+    ofi = ofi.dropna(subset=["Date", "FX"]).sort_values("Date")
+
+    ccl = ccl.copy()
+    ccl["Date"] = pd.to_datetime(ccl["Date"], errors="coerce").dt.normalize()
+
+    # normalizar nombre por si viene como value
+    if "CCL" not in ccl.columns:
+        if "value" in ccl.columns:
+            ccl = ccl.rename(columns={"value": "CCL"})
+        else:
+            for col in ["ccl", "Value", "precio", "Precio"]:
+                if col in ccl.columns:
+                    ccl = ccl.rename(columns={col: "CCL"})
+                    break
+
+    if "CCL" not in ccl.columns:
+        return None, None
+
+    ccl["CCL"] = pd.to_numeric(ccl["CCL"], errors="coerce")
+    ccl = ccl.dropna(subset=["Date", "CCL"]).sort_values("Date")
+
+    if ccl.empty or ofi.empty:
+        return None, None
+
+    # 1) última fecha común exacta (rápido: acotar universo)
+    # (tail grande pero razonable)
+    common = (
+        ofi[["Date", "FX"]].tail(1500)
+        .merge(ccl[["Date", "CCL"]].tail(1500), on="Date", how="inner")
+        .dropna()
+        .sort_values("Date")
+    )
+    if not common.empty:
+        last = common.iloc[-1]
+        brecha = (float(last["CCL"]) / float(last["FX"]) - 1) * 100
+        return float(brecha), pd.to_datetime(last["Date"])
+
+    # 2) fallback: asof (oficial <= fecha CCL), tolerancia 7 días
+    left = ccl[["Date", "CCL"]].tail(600).sort_values("Date")
+    right = ofi[["Date", "FX"]].tail(1200).sort_values("Date")
+
+    m = pd.merge_asof(
+        left,
+        right,
+        on="Date",
+        direction="backward",
+        tolerance=pd.Timedelta(days=7),
+    ).dropna()
+
+    if m.empty:
+        return None, None
+
+    last = m.iloc[-1]
+    brecha = (float(last["CCL"]) / float(last["FX"]) - 1) * 100
+    return float(brecha), pd.to_datetime(last["Date"])
 
 
-def _build_ticker_html(changes: dict[str, float | None], order: list[str]) -> str:
-    parts = []
-    for s in order:
-        v = changes.get(s)
-        cls = "tk-flat"
-        if v is not None:
-            cls = "tk-pos" if v >= 0 else "tk-neg"
-        parts.append(
-            f"<span class='tk-item'><span class='tk-sym'>{s}</span> "
-            f"<span class='{cls}'>{_fmt_pct_es_signed(v)}</span></span>"
+
+# ============================================================
+# Merval USD (estable: última fecha común + limpieza de índice)
+# ============================================================
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def _last_merval_usd():
+    """
+    MERVAL en USD = ^MERV / (YPFD.BA / YPF)
+    Estable: alinea por última fecha común normalizando índice a fecha.
+    """
+    if yf is None:
+        return None, None
+
+    def _close_series(dl):
+        if dl is None:
+            return None
+        if isinstance(dl, pd.Series):
+            return dl
+        if isinstance(dl, pd.DataFrame):
+            if "Close" in dl.columns:
+                s = dl["Close"]
+                if isinstance(s, pd.DataFrame):
+                    s = s.iloc[:, 0]
+                return s
+            if isinstance(dl.columns, pd.MultiIndex):
+                cols = list(dl.columns)
+                c1 = [c for c in cols if len(c) >= 2 and c[0] == "Close"]
+                if c1:
+                    s = dl[c1[0]]
+                    if isinstance(s, pd.DataFrame):
+                        s = s.iloc[:, 0]
+                    return s
+                c2 = [c for c in cols if len(c) >= 2 and c[1] == "Close"]
+                if c2:
+                    s = dl[c2[0]]
+                    if isinstance(s, pd.DataFrame):
+                        s = s.iloc[:, 0]
+                    return s
+        return None
+
+    try:
+        merv_dl = yf.download("^MERV", period="1y", progress=False, auto_adjust=False, group_by="column", threads=True)
+        ypf_ars_dl = yf.download("YPFD.BA", period="1y", progress=False, auto_adjust=False, group_by="column", threads=True)
+        ypf_usd_dl = yf.download("YPF", period="1y", progress=False, auto_adjust=False, group_by="column", threads=True)
+
+        merv = _close_series(merv_dl)
+        ypf_ars = _close_series(ypf_ars_dl)
+        ypf_usd = _close_series(ypf_usd_dl)
+    except Exception:
+        return None, None
+
+    if merv is None or ypf_ars is None or ypf_usd is None:
+        return None, None
+    if merv.empty or ypf_ars.empty or ypf_usd.empty:
+        return None, None
+
+    def _norm_index(s: pd.Series) -> pd.Series:
+        s2 = s.copy()
+        s2.index = pd.to_datetime(s2.index, errors="coerce")
+        try:
+            s2.index = s2.index.tz_localize(None)
+        except Exception:
+            pass
+        s2.index = s2.index.normalize()
+        return s2
+
+    merv = _norm_index(merv).rename("^MERV")
+    ypf_ars = _norm_index(ypf_ars).rename("YPFD.BA")
+    ypf_usd = _norm_index(ypf_usd).rename("YPF")
+
+    df = pd.concat([merv, ypf_ars, ypf_usd], axis=1).dropna()
+    if df.empty:
+        return None, None
+
+    last_date = df.index.max()
+    last = df.loc[last_date]
+
+    ccl_ypf = float(last["YPFD.BA"]) / float(last["YPF"])
+    if not np.isfinite(ccl_ypf) or ccl_ypf <= 0:
+        return None, None
+
+    merval_usd = float(last["^MERV"]) / ccl_ypf
+    return float(merval_usd), pd.to_datetime(last_date)
+
+
+# ============================================================
+# IPIM (INDEC) — último dato NG v/m
+# ============================================================
+IPIM_URL = "https://www.indec.gob.ar/ftp/cuadros/economia/indice_ipim.csv"
+IPIM_HEADER_CODE = "ng_nivel_general"
+
+@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
+def _last_ipim_ng_vm():
+    """
+    Devuelve (ultimo_vm_en_% , periodo_as_timestamp)
+    """
+    try:
+        r = requests.get(IPIM_URL, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        raw = r.content
+    except Exception:
+        return None, None
+
+    df = None
+    for sep in [";", ",", "\t"]:
+        try:
+            tmp = pd.read_csv(io.BytesIO(raw), sep=sep, engine="python")
+            if tmp is None or tmp.empty:
+                continue
+            cols = [c.strip().lower() for c in tmp.columns]
+            if "periodo" in cols and "nivel_general_aperturas" in cols and "indice_ipim" in cols:
+                df = tmp
+                break
+        except Exception:
+            continue
+
+    if df is None or df.empty:
+        return None, None
+
+    out = df[["periodo", "nivel_general_aperturas", "indice_ipim"]].copy()
+    out = out.rename(columns={"periodo": "Periodo_raw", "nivel_general_aperturas": "Apertura_raw", "indice_ipim": "Indice_raw"})
+
+    out["Apertura"] = (
+        out["Apertura_raw"].astype(str).str.strip().str.lower()
+        .str.replace("\u00a0", " ", regex=False)
+        .str.replace(".", "", regex=False)
+        .str.replace(" ", "_", regex=False)
+        .str.replace("__", "_", regex=False)
+    )
+
+    s_per = out["Periodo_raw"].astype(str).str.strip()
+    per = pd.to_datetime(s_per, format="%Y-%m-%d", errors="coerce")
+    out["Periodo"] = per.dt.to_period("M").dt.to_timestamp(how="start")
+
+    s = out["Indice_raw"].astype(str).str.strip()
+    s = s.str.replace("\u00a0", " ", regex=False).str.replace(" ", "", regex=False)
+    has_comma = s.str.contains(",", na=False)
+    s.loc[has_comma] = s.loc[has_comma].str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+    out["Indice"] = pd.to_numeric(s, errors="coerce")
+
+    out = out.dropna(subset=["Periodo", "Apertura", "Indice"]).sort_values(["Apertura", "Periodo"]).reset_index(drop=True)
+    if out.empty:
+        return None, None
+
+    out["v_m"] = out.groupby("Apertura")["Indice"].pct_change(1) * 100
+
+    hdr = out[out["Apertura"] == IPIM_HEADER_CODE].dropna(subset=["v_m"]).sort_values("Periodo")
+    if hdr.empty:
+        return None, None
+
+    last_period = pd.to_datetime(hdr["Periodo"].iloc[-1])
+    last_vm = float(hdr["v_m"].iloc[-1])
+    return last_vm, last_period
+
+
+# ============================================================
+# NEWS TICKER (RSS + scoring)
+# ============================================================
+NEWS_FEEDS = [
+    "https://www.ambito.com/rss/pages/economia.xml",
+]
+
+NEWS_WEIGHTS = {
+    # Macro / instituciones
+    "bcra": 4,
+    "indec": 10,
+    "inflación": 4,
+    "inflacion": 4,
+    "ipc": 4,
+    "ipim": 3,
+    "emae": 4,
+    "pbi": 4,
+    "fmi": 4,
+    "deuda": 5,
+    "empleo": 5,
+    "salarios": 5,
+    "china": 10,
+
+    # Finanzas / mercado
+    "licitación": 3,
+    "licitacion": 3,
+    "bono": 5,
+    "bonos": 5,
+    "riesgo país": 10,
+    "riesgo pais": 10,
+    "reservas": 3,
+    "dólar": 3,
+    "dolar": 3,
+    "monetaria": 3,
+    "cambiaria": 2,
+    "fiscal": 2,
+    "merval": 10,
+
+    # Actividad
+    "recaudación": 2,
+    "recaudacion": 2,
+    "actividad": 5,
+    "industria": 20,
+    "importaciones": 10,
+    "exportaciones": 10,
+
+    # Política / actores
+    "caputo": 10,
+    "milei": 10,
+    "quirno": 10,
+    "uia": 50,
+    "ministerio": 1,
+    "economía": 1,
+    "economia": 1,
+    "gobierno": 1,
+
+    # Ruido / soft news (penaliza)
+    "supermercado": -4,
+    "descuentos": -3,
+    "verano": -3,
+    "hamaca": -4,
+    "ofertas": -3,
+    "oferta": -5,
+    "limpieza": -3,
+    "plazo fijo": -2,
+    "banco": -1,
+    "crucero": -5,
+    "turismo": -3,
+    "vacaciones": -4,
+    "fin de semana": -3,
+    "gastronomía": -3,
+    "gastronomia": -3,
+    "restaurante": -3,
+}
+
+def _news_score_title(title: str) -> int:
+    t = str(title).lower()
+    score = 0
+    for k, w in NEWS_WEIGHTS.items():
+        if k in t:
+            score += w
+    if "argentina" in t:
+        score += 1
+    return int(score)
+
+
+def _parse_rss(xml_bytes: bytes, feed_url: str) -> list[dict]:
+    root = ET.fromstring(xml_bytes)
+    channel = root.find("channel")
+    if channel is None:
+        channel = root.find(".//channel")
+    if channel is None:
+        return []
+
+    out: list[dict] = []
+    for it in channel.findall("item"):
+        title = (it.findtext("title") or "").strip()
+        link = (it.findtext("link") or "").strip()
+        pub = (it.findtext("pubDate") or "").strip()
+        if not title or not link:
+            continue
+
+        dt = None
+        if pub:
+            try:
+                dt = parsedate_to_datetime(pub)
+            except Exception:
+                dt = None
+
+        out.append(
+            {
+                "title": title,
+                "link": link,
+                "published": dt,
+                "source": urlparse(feed_url).netloc.replace("www.", ""),
+                "feed": feed_url,
+            }
         )
+    return out
+
+
+@st.cache_data(ttl=15 * 60, show_spinner=False)
+def _load_news_scored(feeds: list[str] | None = None, max_items_total: int = 50) -> pd.DataFrame:
+    feeds = feeds or NEWS_FEEDS
+    items: list[dict] = []
+    for url in feeds:
+        try:
+            r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            items.extend(_parse_rss(r.content, url))
+        except Exception:
+            continue
+
+    df = pd.DataFrame(items)
+    if df.empty:
+        return df
+
+    df = df.drop_duplicates(subset=["link"], keep="first").copy()
+    if "published" in df.columns:
+        df["published"] = pd.to_datetime(df["published"], errors="coerce")
+
+    df["score"] = df["title"].apply(_news_score_title).astype(int)
+    df = df.sort_values(["score", "published"], ascending=[False, False], na_position="last")
+    return df.head(max_items_total).reset_index(drop=True)
+
+
+def _build_news_ticker_html(df_news: pd.DataFrame, top_n: int = 12) -> str:
+    if df_news is None or df_news.empty:
+        return ""
+
+    df_top = df_news[df_news["score"] > 0].head(top_n)
+    if df_top.empty:
+        df_top = df_news.head(min(top_n, 8))
+
+    parts: list[str] = []
+    for _, r in df_top.iterrows():
+        title = str(r.get("title", "")).strip()
+        link = str(r.get("link", "")).strip()
+        src = str(r.get("source", "")).strip()
+        if not title or not link:
+            continue
+
+        parts.append(
+            "<span class='tk-item'>"
+            f"<a class='tk-link' href='{link}' target='_blank' rel='noopener noreferrer'>"
+            f"📌 {title} <span class='tk-src'>— {src}</span>"
+            "</a>"
+            "</span>"
+        )
+
+    # separador compactito (sin padding extra)
     return "<span class='tk-sep'>•</span>".join(parts)
 
 
 # ============================================================
-# KPI card
+# KPI card helpers
 # ============================================================
 def _kpi_card(value_html: str, label: str, date: str) -> None:
     st.markdown(
@@ -267,10 +627,6 @@ def _kpi_card(value_html: str, label: str, date: str) -> None:
     )
 
 
-def _kpi_card_blank() -> None:
-    _kpi_card("&nbsp;", "&nbsp;", "&nbsp;")
-
-
 # ============================================================
 # RENDER
 # ============================================================
@@ -278,9 +634,14 @@ def render_macro_home(go_to):
     st.markdown(
         """
         <style>
-          /* Contenedor central (NO toca header/logo) */
+          /* ===== Fondo celeste global ===== */
+          section.main { background: #eaf3fb !important; }
+          div[data-testid="stAppViewContainer"]{ background: #eaf3fb !important; }
+          div[data-testid="stHeader"]{ background: #eaf3fb !important; }
+          div[data-testid="stSidebar"]{ background: #eaf3fb !important; }
+
           .macrohome-shell{
-            max-width: 1000px;   /* angosto, pero sin exagerar */
+            max-width: 1000px;
             margin: 0 auto;
             padding: 0 6px;
           }
@@ -294,14 +655,9 @@ def render_macro_home(go_to):
             margin-bottom: 10px;
           }
 
-          /* Marcadores para aplicar estilos SOLO donde corresponde */
           .mh-pills-marker{}
           .mh-kpis-marker{}
 
-          /* === Botones de secciones (celestito + hover) ===
-             Importante: apuntamos SOLO al bloque que contiene el marker,
-             así NO tocamos "Volver a secciones".
-          */
           section.main div[data-testid="stVerticalBlock"]:has(.mh-pills-marker)
           div[data-testid="stButton"] > button{
             height: 44px !important;
@@ -312,7 +668,6 @@ def render_macro_home(go_to):
             color: #0f172a !important;
             box-shadow: 0 6px 14px rgba(15,23,42,0.08) !important;
           }
-
           section.main div[data-testid="stVerticalBlock"]:has(.mh-pills-marker)
           div[data-testid="stButton"] > button:hover{
             background: #dceefe !important;
@@ -320,7 +675,6 @@ def render_macro_home(go_to):
             box-shadow: 0 8px 18px rgba(15,23,42,0.12) !important;
           }
 
-          /* KPI cards */
           .kpi-card{
             background:#ffffff;
             border-radius: 14px;
@@ -363,7 +717,6 @@ def render_macro_home(go_to):
             margin-top: 2px;
           }
 
-          /* Ticker */
           .ticker-wrap{
             width: 82%;
             margin: 10px auto 12px auto;
@@ -372,28 +725,50 @@ def render_macro_home(go_to):
             overflow:hidden;
             border: 1px solid rgba(255,255,255,.10);
           }
-          .ticker-viewport{ padding:10px 0; }
+
+          /* un pelín más compacto */
+          .ticker-viewport{ padding: 9px 0; }
+
           .ticker-track{
             display:inline-block;
             white-space:nowrap;
-            animation:tickerScroll 26s linear infinite;
+            animation:tickerScroll 75s linear infinite;
             will-change: transform;
           }
           @keyframes tickerScroll{
             from{ transform:translateX(0%); }
             to{ transform:translateX(-50%); }
           }
+
+          /* ===== Bloomberg-ish ===== */
           .tk-item{
-            padding:0 14px;
-            font-size:16px;
-            font-weight:800;
-            color:#ffffff !important;
+            display:inline-block;
+            padding: 0 8px;           /* menos aire */
+            font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+            font-size: 13.5px;        /* más ticker */
+            font-weight: 500;         /* menos formal */
+            letter-spacing: 0.15px;
+            color: rgba(255,255,255,0.92) !important;
           }
-          .tk-sym{ color:#ffffff !important; font-weight:900; letter-spacing:.2px; }
-          .tk-sep{ color:rgba(255,255,255,.35) !important; }
-          .tk-pos{ color:#00e676 !important; }
-          .tk-neg{ color:#ff1744 !important; }
-          .tk-flat{ color:#cbd5e1 !important; }
+
+          .tk-sep{
+            margin: 0 6px;            /* separador compacto */
+            color: rgba(255,255,255,.28) !important;
+          }
+
+          .tk-link{
+            color: rgba(255,255,255,0.92) !important;
+            text-decoration:none !important;
+          }
+          .tk-link:hover{
+            text-decoration: none !important;
+            color: rgba(170,215,255,0.98) !important;
+          }
+
+          .tk-src{
+            opacity: 0.60;
+            font-weight: 400;         /* más liviano */
+          }
         </style>
         """,
         unsafe_allow_html=True,
@@ -401,52 +776,21 @@ def render_macro_home(go_to):
 
     st.markdown('<div class="macrohome-shell">', unsafe_allow_html=True)
 
-    # =======================================================
-    # Loading + últimos datos
-    # =======================================================
+    # ✅ Loading arriba (visible)
+    loading_ph = st.empty()
+    loading_ph.info("⏳ Cargando últimos datos...")
+
+    # Placeholder de frase
     fact_ph = st.empty()
     fact_ph.info("💡 " + random.choice(INDU_LOADING_PHRASES))
 
-    with st.spinner("Actualizando últimos datos..."):
-        fx_val, fx_date = _last_tc()
-        tasa_val, tasa_date = _last_tasa()
-        ipc_val, ipc_date = _last_ipc_bcra()
-        emae_yoy, emae_date = _last_emae_yoy()
-        brecha_val, brecha_date = _last_brecha_from_macro_fx()
-        res_val, res_date = _last_reservas()
+    # Placeholder ticker
+    ticker_ph = st.empty()
 
-    fact_ph.empty()
-
-    # =======================================================
-    # TICKER ARRIBA
-    # =======================================================
-    symbols = ["TSLA", "AAPL", "AMZN", "NVDA", "META", "GGAL", "PAM", "VIST", "YPF", "KO", "GOOGL"]
-    changes = _get_daily_changes(symbols)
-    line = _build_ticker_html(changes, symbols)
-
-    st.markdown(
-        f"""
-        <div class="ticker-wrap">
-          <div class="ticker-viewport">
-            <div class="ticker-track">
-              {line}<span class='tk-sep'>•</span>{line}
-            </div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # =======================================================
-    # TÍTULO (SIN subtítulo)
-    # =======================================================
+    # Título y botones
     st.markdown("<div class='macrohome-title'>Macroeconomía</div>", unsafe_allow_html=True)
 
-    # =======================================================
-    # BOTONES SECCIONES (marker para CSS scope)
-    # =======================================================
     st.markdown("<div class='mh-pills-marker'></div>", unsafe_allow_html=True)
-
     b1, b2, b3, b4 = st.columns(4, gap="large")
     with b1:
         if st.button("💱  Tipo de cambio", use_container_width=True, key="mh_btn_fx"):
@@ -458,17 +802,118 @@ def render_macro_home(go_to):
         if st.button("🛒  Precios", use_container_width=True, key="mh_btn_precios"):
             go_to("macro_precios")
     with b4:
-        if st.button("📈  PBI / EMAE", use_container_width=True, key="mh_btn_pbi"):
-            go_to("macro_pbi_emae")
+        if st.button("📈  Finanzas", use_container_width=True, key="mh_btn_fin"):
+            go_to("finanzas")
 
-    # =======================================================
-    # KPIs (2 filas, aire entre filas)
-    # =======================================================
     st.markdown("<div class='mh-kpis-marker'></div>", unsafe_allow_html=True)
 
+    # KPIs (con espacio entre filas)
     r1c1, r1c2, r1c3, r1c4 = st.columns(4, gap="large")
+    st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
+    r2c1, r2c2, r2c3, r2c4 = st.columns(4, gap="large")
 
-    with r1c1:
+    ph_fx = r1c1.empty()
+    ph_tasa = r1c2.empty()
+    ph_ipc = r1c3.empty()
+    ph_riesgo = r1c4.empty()
+
+    ph_brecha = r2c1.empty()
+    ph_res = r2c2.empty()
+    ph_ipim = r2c3.empty()
+    ph_merv = r2c4.empty()
+
+    with ph_fx.container(): _kpi_card("—", "TC Mayorista", "—")
+    with ph_tasa.container(): _kpi_card("—", "Adelantos a Empresas", "—")
+    with ph_ipc.container(): _kpi_card("—", "IPC", "—")
+    with ph_riesgo.container(): _kpi_card("—", "Riesgo País", "—")
+    with ph_brecha.container(): _kpi_card("—", "Brecha Cambiaria", "—")
+    with ph_res.container(): _kpi_card("—", "Reservas Internacionales", "—")
+    with ph_ipim.container(): _kpi_card("—", "IPIM", "—")
+    with ph_merv.container(): _kpi_card("—", "MERVAL (USD)", "—")
+
+    tasks = {
+        "fx": _last_tc,
+        "tasa": _last_tasa,
+        "ipc": _last_ipc_bcra,
+        "riesgo": _last_riesgo_pais,
+        "brecha": _last_brecha_from_macro_fx,
+        "reservas": _last_reservas,
+        "ipim": _last_ipim_ng_vm,
+        "merval": _last_merval_usd,
+        "news": _load_news_scored,
+    }
+
+    results = {}
+
+    # Carga en paralelo
+    with ThreadPoolExecutor(max_workers=7) as ex:
+        futs = {ex.submit(fn): k for k, fn in tasks.items()}
+        for fut in as_completed(futs):
+            k = futs[fut]
+            try:
+                results[k] = fut.result()
+            except Exception:
+                results[k] = None
+
+    # apagar loading y frase
+    loading_ph.empty()
+    fact_ph.empty()
+
+    # Ticker
+    df_news = results.get("news")
+    news_line = _build_news_ticker_html(df_news, top_n=12) if isinstance(df_news, pd.DataFrame) else ""
+    if news_line:
+        ticker_ph.markdown(
+            f"""
+            <div class="ticker-wrap">
+              <div class="ticker-viewport">
+                <div class="ticker-track">
+                  {news_line}<span class='tk-sep'>•</span>{news_line}
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        ticker_ph.markdown(
+            """
+            <div class="ticker-wrap">
+              <div class="ticker-viewport" style="padding:10px 14px; color:#cbd5e1; font-weight:700; font-family: Inter, 'Segoe UI', Arial, sans-serif;">
+                📌 Sin titulares disponibles (reintenta en unos minutos)
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # Resultados
+    fx = results.get("fx")
+    fx_val, fx_date = fx if isinstance(fx, tuple) and len(fx) == 2 else (None, None)
+
+    tasa = results.get("tasa")
+    tasa_val, tasa_date = tasa if isinstance(tasa, tuple) and len(tasa) == 2 else (None, None)
+
+    ipc = results.get("ipc")
+    ipc_val, ipc_date = ipc if isinstance(ipc, tuple) and len(ipc) == 2 else (None, None)
+
+    riesgo = results.get("riesgo")
+    riesgo_val, riesgo_date = riesgo if isinstance(riesgo, tuple) and len(riesgo) == 2 else (None, None)
+
+    brecha = results.get("brecha")
+    brecha_val, brecha_date = brecha if isinstance(brecha, tuple) and len(brecha) == 2 else (None, None)
+
+    resv = results.get("reservas")
+    res_val, res_date = resv if isinstance(resv, tuple) and len(resv) == 2 else (None, None)
+
+    ipim = results.get("ipim")
+    ipim_vm, ipim_date = ipim if isinstance(ipim, tuple) and len(ipim) == 2 else (None, None)
+
+    merv = results.get("merval")
+    mervusd_val, mervusd_date = merv if isinstance(merv, tuple) and len(merv) == 2 else (None, None)
+
+    # Render cards
+    with ph_fx.container():
         if fx_val is not None and fx_date is not None:
             _kpi_card(
                 f"<span class='kpi-prefix'>ARS/USD</span>{_fmt_thousands_es_int(fx_val)}",
@@ -478,7 +923,7 @@ def render_macro_home(go_to):
         else:
             _kpi_card("—", "TC Mayorista", "—")
 
-    with r1c2:
+    with ph_tasa.container():
         if tasa_val is not None and tasa_date is not None:
             _kpi_card(
                 f"{_fmt_pct_es(tasa_val)}<span class='kpi-suffix'>TNA</span>",
@@ -488,34 +933,25 @@ def render_macro_home(go_to):
         else:
             _kpi_card("—", "Adelantos a Empresas", "—")
 
-    with r1c3:
+    with ph_ipc.container():
         if ipc_val is not None and ipc_date is not None:
             _kpi_card(_fmt_pct_es(ipc_val * 100), "IPC", _fmt_mes_anio_es(ipc_date))
         else:
             _kpi_card("—", "IPC", "—")
 
-    with r1c4:
-        if emae_yoy is not None and emae_date is not None:
-            _kpi_card(_fmt_pct_es(emae_yoy), "EMAE (i.a.)", _fmt_mes_anio_es(emae_date))
+    with ph_riesgo.container():
+        if riesgo_val is not None and riesgo_date is not None:
+            _kpi_card(_fmt_thousands_es_int(riesgo_val), "Riesgo País", riesgo_date.strftime("%d/%m/%Y"))
         else:
-            _kpi_card("—", "EMAE (i.a.)", "—")
+            _kpi_card("—", "Riesgo País", "—")
 
-    # aire real
-    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-
-    r2c1, r2c2, r2c3, r2c4 = st.columns(4, gap="large")
-
-    with r2c1:
+    with ph_brecha.container():
         if brecha_val is not None and brecha_date is not None:
-            _kpi_card(
-                _fmt_pct_es(brecha_val, 1),
-                "Brecha Cambiaria",
-                brecha_date.strftime("%d/%m/%Y"),
-            )
+            _kpi_card(_fmt_pct_es(brecha_val, 1), "Brecha Cambiaria", brecha_date.strftime("%d/%m/%Y"))
         else:
             _kpi_card("—", "Brecha Cambiaria", "—")
 
-    with r2c2:
+    with ph_res.container():
         if res_val is not None and res_date is not None:
             _kpi_card(
                 f"<span class='kpi-prefix'>USD</span>{_fmt_thousands_es_int(res_val)}<span class='kpi-suffix'>mill</span>",
@@ -525,11 +961,20 @@ def render_macro_home(go_to):
         else:
             _kpi_card("—", "Reservas Internacionales", "—")
 
-    with r2c3:
-        _kpi_card_blank()
+    with ph_ipim.container():
+        if ipim_vm is not None and ipim_date is not None:
+            _kpi_card(_fmt_pct_es(ipim_vm, 1), "IPIM", _fmt_mes_anio_es(ipim_date))
+        else:
+            _kpi_card("—", "IPIM", "—")
 
-    with r2c4:
-        _kpi_card_blank()
+    with ph_merv.container():
+        if mervusd_val is not None and mervusd_date is not None:
+            _kpi_card(
+                f"<span class='kpi-prefix'>USD</span>{_fmt_thousands_es_int(mervusd_val)}",
+                "MERVAL (USD)",
+                mervusd_date.strftime("%d/%m/%Y"),
+            )
+        else:
+            _kpi_card("—", "MERVAL (USD)", "—")
 
-    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
