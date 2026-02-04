@@ -20,7 +20,7 @@ from pages.macro_home import render_macro_home
 from pages.macro_fx import render_macro_fx
 from pages.macro_tasa import render_macro_tasa
 from pages.macro_precios import render_macro_precios
-from pages.macro_pbi_emae import render_macro_pbi_emae
+from pages.finanzas import render_finanzas
 from pages.empleo import render_empleo
 from pages.ipi import render_ipi
 
@@ -37,7 +37,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 # ----------------------------
 st.set_page_config(
     page_title="Monitor CEU–UIA",
-    page_icon="assets/ok.png",
+    page_icon="assets/okok.png",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -77,10 +77,10 @@ elif sec == "macro_precios":
         go_to("home")
     render_macro_precios(go_to)
 
-elif sec == "macro_pbi_emae":
+elif sec == "finanzas":
     if st.button("← Volver a secciones"):
         go_to("home")
-    render_macro_pbi_emae(go_to)
+    render_finanzas(go_to)
 
 elif sec == "empleo":
     render_empleo(go_to)
