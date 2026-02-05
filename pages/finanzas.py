@@ -905,20 +905,175 @@ def render_finanzas(go_to=None):
             unsafe_allow_html=True,
         )
 
+
+
+
     # ============================================================
-    # MERVAL EN DÓLARES (MERVAL ARS / CCL) — ABAJO
+    # MERVAL EN DÓLARES + ADRs (Yahoo) — ABAJO
+    # - Selector de activo: MERVAL USD (CCL) + ADRs argentinos (USD)
+    # - En el selector NO aparece el ticker, solo el nombre
+    # - Si es ADR: NO dividir por CCL (ya está en USD)
+    # - Header fijo: "Merval (USD)"
     # ============================================================
     st.divider()
 
-    with st.spinner("Cargando MERVAL en dólares..."):
+    # --- catálogo ADRs (label -> ticker Yahoo) ---
+    ADR_CFG = [
+        ("BBVA", "BBAR"),
+        ("Banco Macro", "BMA"),
+        ("Corporación América", "CAAP"),
+        ("Central Puerto", "CEPU"),
+        ("Cresud", "CRESY"),
+        ("Edenor", "EDN"),
+        ("Grupo Financiero Galicia", "GGAL"),
+        ("Globant", "GLOB"),
+        ("IRSA", "IRS"),
+        ("Loma Negra", "LOMA"),
+        ("MercadoLibre", "MELI"),
+        ("Pampa Energía", "PAM"),
+        ("Banco Supervielle", "SUPV"),
+        ("Telecom Argentina", "TEO"),
+        ("Transportadora Gas del Sur", "TGS"),
+        ("Tenaris", "TS"),
+        ("Ternium", "TX"),
+        ("YPF", "YPF"),
+    ]
+
+    # opción MERVAL USD (CCL) + ADRs
+    AR_USD_CFG = [("MERVAL en USD (CCL)", "__MERVUSD__")] + ADR_CFG
+    AR_USD_LABELS = [x[0] for x in AR_USD_CFG]
+    AR_USD_MAP = {lab: tkr for lab, tkr in AR_USD_CFG}
+
+    def _unit_ars_usd(label: str, tkr: str) -> str:
+        if tkr == "__MERVUSD__":
+            return "Índice (ARS/CCL)"
+        return "Acción (USD) — Yahoo"
+
+    def _fmt_es_num(x: float, dec: int = 2) -> str:
+        if x is None or (isinstance(x, float) and np.isnan(x)):
+            return "—"
+        s = f"{x:,.{dec}f}"
+        return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+    def _fmt_value_ar_usd(x: float, tkr: str) -> str:
+        if x is None or (isinstance(x, float) and np.isnan(x)):
+            return "—"
+        # MervalUSD suele quedar "entero", ADRs con 2 dec
+        return _fmt_es_num(x, 0) if tkr == "__MERVUSD__" else _fmt_es_num(x, 2)
+
+    # loader Yahoo 1-col (Close/Adj Close)
+    @st.cache_data(ttl=6 * 60 * 60, show_spinner=False)
+    def _load_yahoo_series_1col(ticker: str, start: str = "2000-01-01") -> pd.DataFrame:
+        if yf is None:
+            return pd.DataFrame(columns=["Date", "value"])
+
+        try:
+            dl = yf.download(
+                ticker,
+                start=start,
+                progress=False,
+                auto_adjust=False,
+                interval="1d",
+                group_by="column",
+                threads=True,
+            )
+        except Exception:
+            dl = None
+
+        if dl is None or getattr(dl, "empty", True):
+            try:
+                dl = yf.download(
+                    ticker,
+                    period="max",
+                    progress=False,
+                    auto_adjust=False,
+                    interval="1d",
+                    group_by="column",
+                    threads=True,
+                )
+            except Exception:
+                dl = None
+
+        if dl is None or getattr(dl, "empty", True):
+            return pd.DataFrame(columns=["Date", "value"])
+
+        s = None
+
+        if isinstance(dl, pd.DataFrame) and not isinstance(dl.columns, pd.MultiIndex):
+            col = "Adj Close" if "Adj Close" in dl.columns else ("Close" if "Close" in dl.columns else None)
+            if col is None:
+                return pd.DataFrame(columns=["Date", "value"])
+            s = dl[col]
+        else:
+            # (field, ticker)
+            for field in ["Adj Close", "Close"]:
+                if field in dl.columns.get_level_values(0):
+                    tmp = dl.xs(field, axis=1, level=0)
+                    if isinstance(tmp, pd.DataFrame):
+                        if tmp.shape[1] == 1:
+                            s = tmp.iloc[:, 0]
+                        elif ticker in tmp.columns:
+                            s = tmp[ticker]
+                    else:
+                        s = tmp
+                    if s is not None:
+                        break
+            # (ticker, field)
+            if s is None:
+                for field in ["Adj Close", "Close"]:
+                    if ticker in dl.columns.get_level_values(0) and field in dl.columns.get_level_values(1):
+                        s = dl[(ticker, field)]
+                        break
+
+        if s is None:
+            return pd.DataFrame(columns=["Date", "value"])
+
+        if isinstance(s, pd.DataFrame):
+            if s.shape[1] == 1:
+                s = s.iloc[:, 0]
+            else:
+                return pd.DataFrame(columns=["Date", "value"])
+
+        s = pd.to_numeric(s, errors="coerce")
+        idx = pd.to_datetime(s.index, errors="coerce")
+        try:
+            idx = idx.tz_localize(None)
+        except Exception:
+            pass
+
+        out = pd.DataFrame({"Date": idx, "value": s.values})
+        out["Date"] = pd.to_datetime(out["Date"], errors="coerce").dt.normalize()
+        out["value"] = pd.to_numeric(out["value"], errors="coerce")
+        out = (
+            out.dropna(subset=["Date", "value"])
+            .drop_duplicates(subset=["Date"])
+            .sort_values("Date")
+            .reset_index(drop=True)
+        )
+        return out
+
+    def _asof_val_1col(df_: pd.DataFrame, target: pd.Timestamp):
+        t = df_.dropna(subset=["Date", "value"]).sort_values("Date")
+        t = t[t["Date"] <= target]
+        if t.empty:
+            return None
+        return float(t["value"].iloc[-1])
+
+    with st.spinner("Cargando activo en USD..."):
+        # defaults (estado)
+        if "mervusd_medida" not in st.session_state:
+            st.session_state["mervusd_medida"] = "Nivel"
+        if "mervusd_activo" not in st.session_state or st.session_state["mervusd_activo"] not in AR_USD_LABELS:
+            st.session_state["mervusd_activo"] = AR_USD_LABELS[0]  # MERVAL en USD (CCL)
+
+        # cargar MERVAL USD (CCL) una vez (lo usamos si eligen esa opción)
         merval_usd = _load_merval_usd()
 
     if merval_usd is None or merval_usd.empty:
-        st.warning("Sin datos para MERVAL en dólares (Yahoo Finance + CCL services).")
+        st.warning("Sin datos para MERVAL en dólares (CCL).")
         return
 
     with st.container():
-        # ⚠️ marker distinto (evita colisiones con el de EMBI)
         st.markdown("<div id='merv_panel_marker'></div>", unsafe_allow_html=True)
 
         components.html(
@@ -954,51 +1109,11 @@ def render_finanzas(go_to=None):
             height=0,
         )
 
-        last_date = pd.to_datetime(merval_usd["Date"].iloc[-1])
-        last_val = float(merval_usd["value"].iloc[-1])
+        # ✅ Placeholders ARRIBA (header queda visualmente arriba)
+        header_ph = st.empty()
+        gap_ph = st.empty()
 
-        def _asof(df_, target):
-            t = df_[df_["Date"] <= target]
-            if t.empty:
-                return None
-            return float(t["value"].iloc[-1])
-
-        v_m = _asof(merval_usd, last_date - pd.Timedelta(days=30))
-        v_y = _asof(merval_usd, last_date - pd.Timedelta(days=365))
-
-        vm = None if v_m is None else (last_val / v_m - 1) * 100
-        va = None if v_y is None else (last_val / v_y - 1) * 100
-
-        a_vm, cls_vm = _arrow_cls(vm)
-        a_va, cls_va = _arrow_cls(va)
-
-        header = [
-            '<div class="fx-wrap">',
-            '  <div class="fx-title-row">',
-            '    <div class="fx-icon-badge">📈</div>',
-            '    <div class="fx-title">MERVAL</div>',
-            "  </div>",
-            '  <div class="fx-card">',
-            '    <div class="fx-row">',
-            f'      <div class="fx-value">{int(round(last_val)):,}'.replace(",", ".") + "</div>",
-            '      <div class="fx-meta">',
-            f"        MERVAL en dólares (CCL)<span class=\"sep\">|</span>{last_date:%d/%m/%Y}",
-            "      </div>",
-            '      <div class="fx-pills">',
-            f'        <div class="fx-pill red"><span class="fx-arrow {cls_vm}">{a_vm}</span><span class="{cls_vm}">{safe_pct(vm,1)}</span><span class="lab">mensual</span></div>',
-            f'        <div class="fx-pill green"><span class="fx-arrow {cls_va}">{a_va}</span><span class="{cls_va}">{safe_pct(va,1)}</span><span class="lab">interanual</span></div>',
-            "      </div>",
-            "    </div>",
-            "  </div>",
-            "</div>",
-        ]
-        st.markdown("\n".join(header), unsafe_allow_html=True)
-
-        st.markdown("<div class='fx-panel-gap'></div>", unsafe_allow_html=True)
-
-        if "mervusd_medida" not in st.session_state:
-            st.session_state["mervusd_medida"] = "Nivel"
-
+        # --- selectores ---
         c1, c2 = st.columns(2, gap="large")
         with c1:
             st.markdown("<div class='fx-panel-title'>Seleccioná la medida</div>", unsafe_allow_html=True)
@@ -1009,11 +1124,74 @@ def render_finanzas(go_to=None):
                 label_visibility="collapsed",
             )
         with c2:
-            st.markdown("<div class='fx-panel-title'>Seleccioná la variable</div>", unsafe_allow_html=True)
-            st.selectbox("", ["—"], disabled=True, label_visibility="collapsed")
+            st.markdown("<div class='fx-panel-title'>Seleccioná el activo</div>", unsafe_allow_html=True)
+            m_activo = st.selectbox(
+                "",
+                AR_USD_LABELS,
+                key="mervusd_activo",
+                label_visibility="collapsed",
+            )
 
-        min_d = merval_usd["Date"].min().date()
-        max_d = merval_usd["Date"].max().date()
+        sel_tkr = AR_USD_MAP[m_activo]
+
+        # --- elegir serie (MERVAL USD (CCL) vs Yahoo) ---
+        if sel_tkr == "__MERVUSD__":
+            s_sel = merval_usd[["Date", "value"]].copy()
+        else:
+            with st.spinner(f"Cargando {m_activo} (Yahoo)..."):
+                s_sel = _load_yahoo_series_1col(sel_tkr, start="1990-01-01")
+
+        if s_sel is None or s_sel.empty:
+            st.warning("Sin datos para el activo seleccionado.")
+            st.stop()
+
+        last_date = pd.to_datetime(s_sel["Date"].iloc[-1])
+        last_val = float(s_sel["value"].iloc[-1])
+
+        v_m = _asof_val_1col(s_sel, last_date - pd.Timedelta(days=30))
+        v_y = _asof_val_1col(s_sel, last_date - pd.Timedelta(days=365))
+
+        vm = None if v_m is None else (last_val / v_m - 1) * 100
+        va = None if v_y is None else (last_val / v_y - 1) * 100
+
+        a_vm, cls_vm = _arrow_cls(vm)
+        a_va, cls_va = _arrow_cls(va)
+
+        # --- header (✅ se pinta UNA sola vez) ---
+        header = [
+            '<div class="fx-wrap">',
+            '  <div class="fx-title-row">',
+            '    <div class="fx-icon-badge">📈</div>',
+            '    <div class="fx-title">Merval (USD)</div>',
+            "  </div>",
+            '  <div class="fx-card">',
+            '    <div class="fx-row">',
+            f'      <div class="fx-value">{_fmt_value_ar_usd(last_val, sel_tkr)}</div>',
+            '      <div class="fx-meta">',
+            f'        {m_activo}<span class="sep">|</span>{_unit_ars_usd(m_activo, sel_tkr)}<span class="sep">|</span>{last_date:%d/%m/%Y}',
+            "      </div>",
+            '      <div class="fx-pills">',
+            '        <div class="fx-pill red">',
+            f'          <span class="fx-arrow {cls_vm}">{a_vm}</span>',
+            f'          <span class="{cls_vm}">{safe_pct(vm,1)}</span>',
+            '          <span class="lab">mensual</span>',
+            "        </div>",
+            '        <div class="fx-pill green">',
+            f'          <span class="fx-arrow {cls_va}">{a_va}</span>',
+            f'          <span class="{cls_va}">{safe_pct(va,1)}</span>',
+            '          <span class="lab">interanual</span>',
+            "        </div>",
+            "      </div>",
+            "    </div>",
+            "  </div>",
+            "</div>",
+        ]
+        header_ph.markdown("\n".join(header), unsafe_allow_html=True)
+        gap_ph.markdown("<div class='fx-panel-gap'></div>", unsafe_allow_html=True)
+
+        # --- rango ---
+        min_d = s_sel["Date"].min().date()
+        max_d = s_sel["Date"].max().date()
         start_def = max(min_d, pd.Timestamp("2023-01-01").date())
 
         st.markdown("<div class='fx-panel-title'>Rango de fechas</div>", unsafe_allow_html=True)
@@ -1026,8 +1204,9 @@ def render_finanzas(go_to=None):
             key="mervusd_range",
         )
 
-        df_plot = merval_usd[(merval_usd["Date"] >= pd.Timestamp(start_d)) & (merval_usd["Date"] <= pd.Timestamp(end_d))].copy()
+        df_plot = s_sel[(s_sel["Date"] >= pd.Timestamp(start_d)) & (s_sel["Date"] <= pd.Timestamp(end_d))].copy()
 
+        # --- plot ---
         fig = go.Figure()
         y0 = pd.to_numeric(df_plot["value"], errors="coerce")
 
@@ -1035,13 +1214,19 @@ def render_finanzas(go_to=None):
             base_series = y0.dropna()
             base = float(base_series.iloc[0]) if not base_series.empty else np.nan
             y = (y0 / base - 1) * 100
-            fig.add_trace(go.Scatter(x=df_plot["Date"], y=y, mode="lines"))
+            fig.add_trace(go.Scatter(x=df_plot["Date"], y=y, mode="lines", name=f"{m_activo} (var. acum.)"))
             fig.add_hline(y=0, line_width=1, line_color="rgba(80,80,80,0.7)")
             fig.update_yaxes(ticksuffix="%")
         else:
-            fig.add_trace(go.Scatter(x=df_plot["Date"], y=y0, mode="lines"))
+            fig.add_trace(go.Scatter(x=df_plot["Date"], y=y0, mode="lines", name=m_activo))
 
-        fig.update_layout(height=520, hovermode="x", margin=dict(l=10, r=10, t=10, b=40), dragmode=False)
+        fig.update_layout(
+            height=520,
+            hovermode="x",
+            margin=dict(l=10, r=10, t=10, b=40),
+            dragmode=False,
+            showlegend=False,
+        )
 
         x_max = pd.to_datetime(df_plot["Date"].max())
         x_min = pd.to_datetime(df_plot["Date"].min())
@@ -1049,24 +1234,27 @@ def render_finanzas(go_to=None):
 
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-        export = df_plot.rename(columns={"value": "merval_usd"}).copy()
-        export["merval_ars"] = df_plot.get("merval_ars")
-        export["ccl"] = df_plot.get("ccl")
+        # --- export ---
+        export = df_plot.copy().rename(columns={"value": "usd"})
+        export["asset"] = m_activo
+        export["ticker"] = "" if sel_tkr == "__MERVUSD__" else sel_tkr
 
         st.download_button(
             "⬇️ Descargar CSV",
             export.to_csv(index=False).encode("utf-8"),
-            file_name=f"merval_usd_{end_d}.csv",
+            file_name=f"arg_usd_{('merval_usd' if sel_tkr=='__MERVUSD__' else sel_tkr)}_{end_d}.csv",
             mime="text/csv",
             key="dl_mervusd_csv",
         )
 
         st.markdown(
             "<div style='color:rgba(20,50,79,0.70); font-size:12px;'>"
-            "Fuente: CEU-UIA en base a Yahoo Finance (^MERV) y CCL proxy YPFD.BA/YPF (services)."
+            "Fuente: CEU-UIA en base a Yahoo Finance y MERVAL en USD vía ^MERV/CCL (services)."
             "</div>",
             unsafe_allow_html=True,
         )
+
+
 
 
 
