@@ -164,6 +164,74 @@ def _range_accum_from_monthly_pct(df: pd.DataFrame, date_col: str, group_col: st
 
 
 # ============================================================
+# IPCA (ENGHo 2017/18) — base 100=2025
+# ============================================================
+DIV_CODES = list(range(1, 13))
+W_2017 = {
+    1: 22.7 / 100, 2: 2.0 / 100, 3: 6.8 / 100, 4: 14.5 / 100,
+    5: 5.5 / 100, 6: 6.4 / 100, 7: 14.3 / 100, 8: 5.1 / 100,
+    9: 8.6 / 100, 10: 3.1 / 100, 11: 6.6 / 100, 12: 4.4 / 100,
+}
+
+
+def _compute_ipca_base_2025(ipc_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    IPCA (ENGHo 2017/18) desde IPC INDEC por divisiones (1..12).
+    Base: promedio 2025 = 100.
+    Output: Periodo, Serie, Indice, v_m, v_i_a
+    """
+    if ipc_raw is None or ipc_raw.empty:
+        return pd.DataFrame()
+
+    need = {"Periodo", "Codigo", "Codigo_num", "Indice_IPC", "Region", "Clasificador"}
+    if not need.issubset(set(ipc_raw.columns)):
+        return pd.DataFrame()
+
+    d = ipc_raw.copy()
+
+    # 1) Solo Nacional + Divisiones COICOP
+    d = d[(d["Region"] == "Nacional") & (d["Clasificador"].str.contains("divisiones", case=False, na=False))].copy()
+
+    # 2) Solo códigos 1..12
+    d["Codigo_num"] = pd.to_numeric(d["Codigo_num"], errors="coerce")
+    d = d[d["Codigo_num"].isin(DIV_CODES)].copy()
+    if d.empty:
+        return pd.DataFrame()
+
+    d["Codigo_num"] = d["Codigo_num"].astype(int)
+    d["Periodo"] = pd.to_datetime(d["Periodo"], errors="coerce").dt.to_period("M").dt.to_timestamp(how="start")
+    d["Indice_IPC"] = pd.to_numeric(d["Indice_IPC"], errors="coerce")
+
+    d = d.dropna(subset=["Periodo", "Codigo_num", "Indice_IPC"])
+
+    div_wide = (
+        d.pivot_table(index="Periodo", columns="Codigo_num", values="Indice_IPC", aggfunc="last")
+        .sort_index()
+    )
+
+    # asegurar columnas 1..12
+    for c in DIV_CODES:
+        if c not in div_wide.columns:
+            div_wide[c] = np.nan
+    div_wide = div_wide[DIV_CODES]
+
+    # base: promedio 2025 (fallback: promedio total)
+    base_mask = div_wide.index.year == 2025
+    base_avg = div_wide.loc[base_mask, DIV_CODES].mean(axis=0)
+    if base_avg.isna().any():
+        base_avg = div_wide[DIV_CODES].mean(axis=0)
+
+    ratios = div_wide.divide(base_avg, axis=1)
+    wvec = np.array([W_2017[c] for c in DIV_CODES], dtype=float)
+    level = 100.0 * (ratios.values @ wvec)
+
+    out = pd.DataFrame({"Periodo": div_wide.index, "Serie": "ipca", "Indice": level}).sort_values("Periodo")
+    out["v_m"] = out["Indice"].pct_change(1) * 100
+    out["v_i_a"] = out["Indice"].pct_change(12) * 100
+    return out.reset_index(drop=True)
+
+
+# ============================================================
 # Page
 # ============================================================
 def render_macro_precios(go_to):
@@ -410,9 +478,10 @@ def render_macro_precios(go_to):
     # Datos: IPC (Nacional)
     # =========================
     with st.spinner("Cargando datos..."):
-        ipc = get_ipc_indec_full()
+        ipc_raw = get_ipc_indec_full()
 
-    ipc = ipc[ipc["Region"] == "Nacional"].copy()
+    # IPC “para el dashboard” (como ya lo venías usando)
+    ipc = ipc_raw[ipc_raw["Region"] == "Nacional"].copy()
     if ipc.empty:
         st.warning("Sin datos IPC.")
         return
@@ -421,6 +490,12 @@ def render_macro_precios(go_to):
     ipc["Descripcion"] = ipc["Descripcion"].astype(str).str.strip()
     ipc["Periodo"] = pd.to_datetime(ipc["Periodo"], errors="coerce").dt.normalize()
     ipc = ipc.dropna(subset=["Periodo"]).sort_values("Periodo")
+
+    # =========================
+    # IPCA (ENGHo 2017/18) base 100=2025
+    # (requiere Indice_IPC en el DF de IPC)
+    # =========================
+    ipca = _compute_ipca_base_2025(ipc_raw)
 
     # Labels IPC
     label_fix = {"B": "Bienes", "S": "Servicios"}
@@ -457,6 +532,9 @@ def render_macro_precios(go_to):
     ipc_code_general = _find_code_by_label("nivel general") or (options_ipc[0] if options_ipc else None)
     ipc_code_servicios = _find_code_by_label("servicios")
     ipc_code_bienes = _find_code_by_label("bienes")
+
+    if ipca.empty: st.warning("IPCA vacío (revisar filtros de divisiones 1..12 / clasificador).")
+
 
     # =========================
     # Datos: IPIM (INDEC)
@@ -518,7 +596,7 @@ def render_macro_precios(go_to):
     ipim["v_i_a"] = ipim.groupby("Apertura")["Indice"].pct_change(12) * 100
 
     # ============================================================
-    # 0) PANEL NUEVO ARRIBA: PRECIOS (IPC + IPIM Manufacturados)
+    # 0) PANEL NUEVO ARRIBA: PRECIOS (IPC + IPIM Manufacturados + IPCA)
     # ============================================================
     if "precios_medida" not in st.session_state:
         st.session_state["precios_medida"] = "Mensual"
@@ -528,11 +606,17 @@ def render_macro_precios(go_to):
     if st.session_state["precios_medida"] not in ["Mensual", "Anual", "Acumulado"]:
         st.session_state["precios_medida"] = "Mensual"
 
-    PRECIOS_OPTIONS = ["IPC - General", "IPC - Servicios", "IPC - Bienes", "IPIM - Manufacturados"]
+    PRECIOS_OPTIONS = [
+        "IPC - General", "IPC - Servicios", "IPC - Bienes",
+        "IPC (ENGHo 2017/18, base 100=2025)",
+        "IPIM - Manufacturados",
+    ]
+
     precios_map = {
         "IPC - General": ("ipc", ipc_code_general),
         "IPC - Servicios": ("ipc", ipc_code_servicios),
         "IPC - Bienes": ("ipc", ipc_code_bienes),
+        "IPC (ENGHo 2017/18, base 100=2025)": ("ipca", "ipca"),
         "IPIM - Manufacturados": ("ipim", "d_productos_manufacturados"),
     }
 
@@ -600,7 +684,6 @@ def render_macro_precios(go_to):
 
     with c2p:
         st.markdown("<div class='fx-panel-title'>Seleccioná la variable</div>", unsafe_allow_html=True)
-        # IMPORTANTE: sin default (si hay key), para evitar warning de Session State
         st.multiselect(
             "",
             PRECIOS_OPTIONS,
@@ -610,7 +693,6 @@ def render_macro_precios(go_to):
 
     selected_precios = st.session_state.get("precios_vars", [])
     if not selected_precios:
-        # silencioso, sin warnings
         selected_precios = ["IPC - General", "IPIM - Manufacturados"]
         st.session_state["precios_vars"] = selected_precios
 
@@ -620,10 +702,14 @@ def render_macro_precios(go_to):
         which, code = precios_map.get(opt, (None, None))
         if which is None or code is None:
             continue
+
         if which == "ipc":
             d = ipc[ipc["Codigo_str"] == code][["Periodo"]].dropna()
-        else:
+        elif which == "ipim":
             d = ipim[ipim["Apertura"] == code][["Periodo"]].dropna()
+        else:  # ipca
+            d = ipca[ipca["Serie"] == "ipca"][["Periodo"]].dropna()
+
         all_dates.append(d)
 
     if not all_dates:
@@ -689,7 +775,7 @@ def render_macro_precios(go_to):
             if d.empty:
                 continue
 
-        else:
+        elif which == "ipim":
             d = ipim[ipim["Apertura"] == code].copy()
             d = d[(d["Periodo"] >= start_m_p) & (d["Periodo"] < end_exclusive_p)].sort_values("Periodo")
             if d.empty:
@@ -703,6 +789,29 @@ def render_macro_precios(go_to):
                 ylab = "Variación anual (%)"
             else:
                 d["acc_range"] = _range_accum_from_index(d, "Periodo", "Apertura", "Indice", start_m_p)
+                y = d["acc_range"]
+                ylab = "Variación acumulada (%)"
+
+            d["y"] = pd.to_numeric(y, errors="coerce")
+            d = d.dropna(subset=["Periodo", "y"])
+            if d.empty:
+                continue
+
+        else:  # ipca
+            d = ipca.copy()
+            d = d[(d["Periodo"] >= start_m_p) & (d["Periodo"] < end_exclusive_p)].sort_values("Periodo")
+            if d.empty:
+                continue
+
+            if medida_p == "Mensual":
+                y = d["v_m"]
+                ylab = "Variación mensual (%)"
+            elif medida_p == "Anual":
+                y = d["v_i_a"]
+                ylab = "Variación anual (%)"
+            else:
+                # acumulado desde índice (base = start del slider)
+                d["acc_range"] = _range_accum_from_index(d, "Periodo", "Serie", "Indice", start_m_p)
                 y = d["acc_range"]
                 ylab = "Variación acumulada (%)"
 
@@ -766,6 +875,11 @@ def render_macro_precios(go_to):
     )
 
     # ============================================================
+    # DESDE ACÁ (st.divider() de IPC en adelante) ES IGUAL A TU ARCHIVO
+    # (no hay cambios para sumar IPCA al primer gráfico)
+    # ============================================================
+
+    # ============================================================
     # 1) IPC (Nacional) — PANEL (abajo) + Acumulado por rango
     # ============================================================
     st.divider()
@@ -795,6 +909,9 @@ def render_macro_precios(go_to):
         """,
         height=0,
     )
+
+    # --- TODO LO QUE SIGUE, PEGALO TAL CUAL DE TU VERSION ORIGINAL ---
+    # (no toqué nada más)
 
     DEFAULT_SELECTED = [ipc_code_general] if ipc_code_general else []
     if "ipc_medida" not in st.session_state:
