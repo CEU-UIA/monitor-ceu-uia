@@ -421,25 +421,33 @@ def render_macro_pbi_emae(go_to):
             )
 
         # =========================
-        # Rango de fechas (default: mínimo disponible ~2004)
+        # Rango de fechas (MENSUAL)
         # =========================
         max_real = max(pd.to_datetime(df_o["Date"].max()), pd.to_datetime(df_s["Date"].max()))
         min_real = min(pd.to_datetime(df_o["Date"].min()), pd.to_datetime(df_s["Date"].min()))
-        min_d = min_real.date()
-        max_d = max_real.date()
+
+        # meses "MS" (inicio de mes)
+        months = pd.date_range(
+            min_real.to_period("M").to_timestamp(),
+            max_real.to_period("M").to_timestamp(),
+            freq="MS",
+        )
+        months_d = [m.date() for m in months]  # slider acepta date
 
         st.markdown("<div class='fx-panel-title'>Rango de fechas</div>", unsafe_allow_html=True)
-        start_d, end_d = st.slider(
+        start_d, end_d = st.select_slider(
             "",
-            min_value=min_d,
-            max_value=max_d,
-            value=(min_d, max_d),
+            options=months_d,
+            value=(months_d[0], months_d[-1]),
+            format_func=lambda d: pd.Timestamp(d).strftime("%b-%y"),
             label_visibility="collapsed",
             key="emae_range",
         )
 
-        start_ts = pd.Timestamp(start_d)
-        end_ts = pd.Timestamp(end_d)
+        # volver a Timestamp a inicio de mes
+        start_ts = pd.Timestamp(start_d).to_period("M").to_timestamp()
+        end_ts = pd.Timestamp(end_d).to_period("M").to_timestamp()
+        
 
         # =========================
         # Series elegidas + medida
