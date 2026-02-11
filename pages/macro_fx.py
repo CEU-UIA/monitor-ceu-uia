@@ -334,6 +334,16 @@ def render_macro_fx(go_to):
         header_var = "TC Mayorista"
         label_unidad = "ARS/USD"
 
+    # --- Guardas anti-baches (BCRA/Yahoo) para el header ---
+    if hdr_df is None or hdr_df.empty or ("Date" not in hdr_df.columns) or ("VAL" not in hdr_df.columns):
+        st.warning("Tipo de cambio: sin datos para el header (API sin respuesta o DF vacío). Reintentá más tarde.")
+        return
+
+    hdr_df = hdr_df.dropna(subset=["Date", "VAL"]).sort_values("Date").reset_index(drop=True)
+    if hdr_df.empty:
+        st.warning("Tipo de cambio: sin datos válidos (Date/VAL).")
+        return
+
     last_date = pd.to_datetime(hdr_df["Date"].iloc[-1])
     last_val = float(hdr_df["VAL"].iloc[-1])
 
