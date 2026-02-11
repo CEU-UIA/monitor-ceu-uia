@@ -23,6 +23,8 @@ from pages.macro_precios import render_macro_precios
 from pages.finanzas import render_finanzas
 from pages.empleo import render_empleo
 from pages.ipi import render_ipi
+from pages.macro_pbi_emae import render_macro_pbi_emae
+
 
 
 # ----------------------------
@@ -88,6 +90,14 @@ elif sec == "empleo":
 elif sec == "ipi":
     render_ipi(go_to)
 
+elif sec == "macro_pbi_emae":
+    if st.button("← Volver a secciones"):
+        go_to("home")
+    render_macro_pbi_emae(go_to)
+
+
 else:
     st.warning("Sección desconocida. Volviendo al inicio.")
     go_to("home")
+
+
