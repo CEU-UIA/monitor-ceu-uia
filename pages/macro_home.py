@@ -250,7 +250,6 @@ def _last_brecha_from_macro_fx():
         return None, None
 
     # 1) última fecha común exacta (rápido: acotar universo)
-    # (tail grande pero razonable)
     common = (
         ofi[["Date", "FX"]].tail(1500)
         .merge(ccl[["Date", "CCL"]].tail(1500), on="Date", how="inner")
@@ -280,7 +279,6 @@ def _last_brecha_from_macro_fx():
     last = m.iloc[-1]
     brecha = (float(last["CCL"]) / float(last["FX"]) - 1) * 100
     return float(brecha), pd.to_datetime(last["Date"])
-
 
 
 # ============================================================
@@ -368,15 +366,16 @@ def _last_merval_usd():
 
 
 # ============================================================
-# IPIM (INDEC) — último dato NG v/m
+# IPIM (INDEC) — último dato Manufacturas v/m
 # ============================================================
 IPIM_URL = "https://www.indec.gob.ar/ftp/cuadros/economia/indice_ipim.csv"
-IPIM_HEADER_CODE = "ng_nivel_general"
+IPIM_HEADER_CODE = "d_productos_manufacturados"
 
 @st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
 def _last_ipim_ng_vm():
     """
-    Devuelve (ultimo_vm_en_% , periodo_as_timestamp)
+    Devuelve (ultimo_vm_en_% , periodo_as_timestamp) para IPIM Manufacturas.
+    (El nombre histórico de la función se mantiene para no romper imports.)
     """
     try:
         r = requests.get(IPIM_URL, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
@@ -402,7 +401,13 @@ def _last_ipim_ng_vm():
         return None, None
 
     out = df[["periodo", "nivel_general_aperturas", "indice_ipim"]].copy()
-    out = out.rename(columns={"periodo": "Periodo_raw", "nivel_general_aperturas": "Apertura_raw", "indice_ipim": "Indice_raw"})
+    out = out.rename(
+        columns={
+            "periodo": "Periodo_raw",
+            "nivel_general_aperturas": "Apertura_raw",
+            "indice_ipim": "Indice_raw",
+        }
+    )
 
     out["Apertura"] = (
         out["Apertura_raw"].astype(str).str.strip().str.lower()
@@ -422,7 +427,11 @@ def _last_ipim_ng_vm():
     s.loc[has_comma] = s.loc[has_comma].str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
     out["Indice"] = pd.to_numeric(s, errors="coerce")
 
-    out = out.dropna(subset=["Periodo", "Apertura", "Indice"]).sort_values(["Apertura", "Periodo"]).reset_index(drop=True)
+    out = (
+        out.dropna(subset=["Periodo", "Apertura", "Indice"])
+        .sort_values(["Apertura", "Periodo"])
+        .reset_index(drop=True)
+    )
     if out.empty:
         return None, None
 
@@ -445,7 +454,6 @@ NEWS_FEEDS = [
 ]
 
 NEWS_WEIGHTS = {
-    # Macro / instituciones
     "bcra": 4,
     "indec": 10,
     "inflación": 4,
@@ -459,8 +467,6 @@ NEWS_WEIGHTS = {
     "empleo": 5,
     "salarios": 5,
     "china": 10,
-
-    # Finanzas / mercado
     "licitación": 3,
     "licitacion": 3,
     "bono": 5,
@@ -474,16 +480,12 @@ NEWS_WEIGHTS = {
     "cambiaria": 2,
     "fiscal": 2,
     "merval": 10,
-
-    # Actividad
     "recaudación": 2,
     "recaudacion": 2,
     "actividad": 5,
     "industria": 20,
     "importaciones": 10,
     "exportaciones": 10,
-
-    # Política / actores
     "caputo": 10,
     "milei": 10,
     "quirno": 10,
@@ -492,8 +494,6 @@ NEWS_WEIGHTS = {
     "economía": 1,
     "economia": 1,
     "gobierno": 1,
-
-    # Ruido / soft news (penaliza)
     "supermercado": -4,
     "descuentos": -3,
     "verano": -3,
@@ -607,7 +607,6 @@ def _build_news_ticker_html(df_news: pd.DataFrame, top_n: int = 12) -> str:
             "</span>"
         )
 
-    # separador compactito (sin padding extra)
     return "<span class='tk-sep'>•</span>".join(parts)
 
 
@@ -726,7 +725,6 @@ def render_macro_home(go_to):
             border: 1px solid rgba(255,255,255,.10);
           }
 
-          /* un pelín más compacto */
           .ticker-viewport{ padding: 9px 0; }
 
           .ticker-track{
@@ -743,19 +741,17 @@ def render_macro_home(go_to):
           /* ===== Bloomberg-ish ===== */
           .tk-item{
             display:inline-block;
-            padding: 0 8px;           /* menos aire */
+            padding: 0 8px;
             font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
-            font-size: 13.5px;        /* más ticker */
-            font-weight: 500;         /* menos formal */
+            font-size: 13.5px;
+            font-weight: 500;
             letter-spacing: 0.15px;
             color: rgba(255,255,255,0.92) !important;
           }
-
           .tk-sep{
-            margin: 0 6px;            /* separador compacto */
+            margin: 0 6px;
             color: rgba(255,255,255,.28) !important;
           }
-
           .tk-link{
             color: rgba(255,255,255,0.92) !important;
             text-decoration:none !important;
@@ -764,10 +760,9 @@ def render_macro_home(go_to):
             text-decoration: none !important;
             color: rgba(170,215,255,0.98) !important;
           }
-
           .tk-src{
             opacity: 0.60;
-            font-weight: 400;         /* más liviano */
+            font-weight: 400;
           }
         </style>
         """,
@@ -828,7 +823,7 @@ def render_macro_home(go_to):
     with ph_riesgo.container(): _kpi_card("—", "Riesgo País", "—")
     with ph_brecha.container(): _kpi_card("—", "Brecha Cambiaria", "—")
     with ph_res.container(): _kpi_card("—", "Reservas Internacionales", "—")
-    with ph_ipim.container(): _kpi_card("—", "IPIM", "—")
+    with ph_ipim.container(): _kpi_card("—", "IPIM Manufacturas", "—")
     with ph_merv.container(): _kpi_card("—", "MERVAL (USD)", "—")
 
     tasks = {
@@ -961,11 +956,12 @@ def render_macro_home(go_to):
         else:
             _kpi_card("—", "Reservas Internacionales", "—")
 
+    # ✅ CAMBIO: label siempre "IPIM Manufacturas"
     with ph_ipim.container():
         if ipim_vm is not None and ipim_date is not None:
-            _kpi_card(_fmt_pct_es(ipim_vm, 1), "IPIM", _fmt_mes_anio_es(ipim_date))
+            _kpi_card(_fmt_pct_es(ipim_vm, 1), "IPIM Manufacturas", _fmt_mes_anio_es(ipim_date))
         else:
-            _kpi_card("—", "IPIM", "—")
+            _kpi_card("—", "IPIM Manufacturas", "—")
 
     with ph_merv.container():
         if mervusd_val is not None and mervusd_date is not None:
