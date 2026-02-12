@@ -314,24 +314,18 @@ def render_macro_tasa(go_to):
     # =========================
     # Load data
     # =========================
-    fact = st.empty()
-    fact.info("💡 " + random.choice(INDU_LOADING_PHRASES))
+    rem29 = _rem29_to_daily(get_monetaria_serie(ID_REM))
 
-    with st.spinner("Cargando datos..."):
-        rem29 = _rem29_to_daily(get_monetaria_serie(ID_REM))
-
-        series_data = {}
-        for sid in SERIES_TASAS:
-            df = get_monetaria_serie(sid)
-            if df is None or df.empty:
-                continue
-            df = df.copy()
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.normalize()
-            df["value"] = pd.to_numeric(df["value"], errors="coerce")
-            df = df.dropna(subset=["Date", "value"]).sort_values("Date")
-            series_data[sid] = df
-
-    fact.empty()
+    series_data = {}
+    for sid in SERIES_TASAS:
+        df = get_monetaria_serie(sid)
+        if df is None or df.empty:
+            continue
+        df = df.copy()
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.normalize()
+        df["value"] = pd.to_numeric(df["value"], errors="coerce")
+        df = df.dropna(subset=["Date", "value"]).sort_values("Date")
+        series_data[sid] = df
 
     if not series_data:
         st.warning("Sin datos para las tasas.")
@@ -339,6 +333,7 @@ def render_macro_tasa(go_to):
 
     max_rate_date = max(df["Date"].max() for df in series_data.values())
     rem29 = _extend_daily_ffill(rem29, max_rate_date)
+
 
     # =========================
     # Defaults (state) - SIEMPRE antes de crear widgets
