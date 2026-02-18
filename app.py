@@ -25,7 +25,6 @@ from pages.ipi import render_ipi
 from pages.macro_pbi_emae import render_macro_pbi_emae
 from pages.comex import render_comex
 
-
 # ----------------------------
 # Warnings (limpia consola)
 # ----------------------------
@@ -143,12 +142,6 @@ elif sec == "macro_pbi_emae":
     if st.button("← Volver a secciones"):
         go_to("home")
     render_macro_pbi_emae(go_to)
-
-elif sec == "comex":
-    if st.button("← Volver a secciones"):
-        go_to("home")
-    render_comex(go_to)
-
 
 else:
     st.warning("Sección desconocida. Volviendo al inicio.")
