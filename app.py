@@ -23,7 +23,7 @@ from pages.finanzas import render_finanzas
 from pages.empleo import render_empleo
 from pages.ipi import render_ipi
 from pages.macro_pbi_emae import render_macro_pbi_emae
-
+from pages.comex import render_comex
 
 # ----------------------------
 # Warnings (limpia consola)
