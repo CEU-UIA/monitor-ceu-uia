@@ -209,7 +209,7 @@ def render_main_home(go_to):
         <style>
           .home-shell{
             max-width:1200px;
-            margin:30px auto;
+            margin:0px auto 5px auto;
             padding:0 16px;
             display:flex;
             flex-direction:column;
@@ -351,12 +351,12 @@ def render_main_home(go_to):
     st.markdown("<div class='home-title'>Monitor CEU–UIA</div>", unsafe_allow_html=True)
 
     sections = [
-        ("🚢 Comercio Exterior", "comex"),
+        ("🏭 Producción Industrial", "ipi"),
         ("📈 Actividad Económica", "macro_pbi_emae"),
         ("🚀 Datos Adelantados", None),
         ("📊 Macroeconomía", "macro_home"),
         ("💼 Empleo Privado", "empleo"),
-        ("🏭 Producción Industrial", "ipi"),
+        ("🚢 Comercio Exterior", "comex"),
     ]
 
     r1 = st.columns(3, gap="large")
