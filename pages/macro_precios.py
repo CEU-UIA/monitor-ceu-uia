@@ -477,8 +477,7 @@ def render_macro_precios(go_to):
     # =========================
     # Datos: IPC (Nacional)
     # =========================
-    with st.spinner("Cargando datos..."):
-        ipc_raw = get_ipc_indec_full()
+    ipc_raw = get_ipc_indec_full()
 
     # IPC “para el dashboard” (como ya lo venías usando)
     ipc = ipc_raw[ipc_raw["Region"] == "Nacional"].copy()
@@ -490,6 +489,7 @@ def render_macro_precios(go_to):
     ipc["Descripcion"] = ipc["Descripcion"].astype(str).str.strip()
     ipc["Periodo"] = pd.to_datetime(ipc["Periodo"], errors="coerce").dt.normalize()
     ipc = ipc.dropna(subset=["Periodo"]).sort_values("Periodo")
+
 
     # =========================
     # IPCA (ENGHo 2017/18) base 100=2025

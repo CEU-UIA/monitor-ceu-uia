@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 from ui.common import safe_pct
 
 # ✅ services
-from services.market_data import get_ccl_ypf_df
+from services.market_data import get_ccl_ypf_df_fast
 
 # yfinance opcional (solo para ^MERV)
 try:
@@ -229,7 +229,7 @@ def _load_merval_usd() -> pd.DataFrame:
     if merv is None or merv.empty:
         return pd.DataFrame(columns=["Date", "value", "merval_ars", "ccl"])
 
-    ccl = get_ccl_ypf_df(start="2000-01-01", prefer_adj=False)  # Date, value
+    ccl = get_ccl_ypf_df_fast(period="max", prefer_adj=False)  # Date, value
     if ccl is None or ccl.empty:
         return pd.DataFrame(columns=["Date", "value", "merval_ars", "ccl"])
 
@@ -247,7 +247,7 @@ def _load_merval_usd() -> pd.DataFrame:
         right,
         on="Date",
         direction="backward",
-        tolerance=pd.Timedelta(days=7),
+        tolerance=pd.Timedelta(days=15),
     )
 
     merged["merval_ars"] = pd.to_numeric(merged["merval_ars"], errors="coerce")
@@ -264,6 +264,13 @@ def _load_merval_usd() -> pd.DataFrame:
 # RENDER
 # ============================================================
 def render_finanzas(go_to=None):
+
+    # =========================
+    # Botón volver (igual que macro_fx)
+    # =========================
+    if go_to is not None:
+        if st.button("← Volver"):
+            go_to("macro_home")   # o "home" si tu routing usa otro nombre
 
     st.markdown(
         textwrap.dedent(
