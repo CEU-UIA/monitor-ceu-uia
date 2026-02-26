@@ -769,11 +769,11 @@ def render_ipi(go_to):
                 st.session_state["ipi_sec_year_b"] = years_all[1] if len(years_all) > 1 else years_all[0]
 
             with colA:
-                st.markdown("<div class='fx-panel-title'>Período A</div>", unsafe_allow_html=True)
+                st.markdown("<div class='fx-panel-title'>Período Final</div>", unsafe_allow_html=True)
                 st.selectbox("", years_all, key="ipi_sec_year_a", label_visibility="collapsed")
 
             with colB:
-                st.markdown("<div class='fx-panel-title'>Período B</div>", unsafe_allow_html=True)
+                st.markdown("<div class='fx-panel-title'>Período Inicial</div>", unsafe_allow_html=True)
                 st.selectbox("", years_all, key="ipi_sec_year_b", label_visibility="collapsed")
 
             year_a = int(st.session_state.get("ipi_sec_year_a"))
@@ -810,7 +810,7 @@ def render_ipi(go_to):
                 st.session_state["ipi_sec_month_b"] = possible_dates[1] if len(possible_dates) > 1 else possible_dates[0]
 
             with colA:
-                st.markdown("<div class='fx-panel-title'>Período A</div>", unsafe_allow_html=True)
+                st.markdown("<div class='fx-panel-title'>Período Final</div>", unsafe_allow_html=True)
                 st.selectbox(
                     "",
                     possible_dates,
@@ -820,7 +820,7 @@ def render_ipi(go_to):
                 )
 
             with colB:
-                st.markdown("<div class='fx-panel-title'>Período B</div>", unsafe_allow_html=True)
+                st.markdown("<div class='fx-panel-title'>Período Inicial</div>", unsafe_allow_html=True)
                 st.selectbox(
                     "",
                     possible_dates,
@@ -854,7 +854,7 @@ def render_ipi(go_to):
                 st.session_state["ipi_sec_se_month_a"] = possible_dates[0] if possible_dates else None
 
             with colA:
-                st.markdown("<div class='fx-panel-title'>Período A</div>", unsafe_allow_html=True)
+                st.markdown("<div class='fx-panel-title'>Período Final</div>", unsafe_allow_html=True)
                 st.selectbox(
                     "",
                     possible_dates,
@@ -868,7 +868,7 @@ def render_ipi(go_to):
             # B: excluir el MISMO MES (month) que A (pedido)
             possible_dates_b = [d for d in possible_dates if pd.to_datetime(d).month != dt_a.month]
             if not possible_dates_b:
-                st.warning("No hay meses alternativos para Período B (sin repetir el mes de A).")
+                st.warning("No hay meses alternativos para Período Inicial (sin repetir el mes de A).")
                 return
 
             # si el B guardado quedó inválido, resetear
@@ -876,7 +876,7 @@ def render_ipi(go_to):
                 st.session_state["ipi_sec_se_month_b"] = possible_dates_b[0]
 
             with colB:
-                st.markdown("<div class='fx-panel-title'>Período B</div>", unsafe_allow_html=True)
+                st.markdown("<div class='fx-panel-title'>Período Inicial</div>", unsafe_allow_html=True)
                 st.selectbox(
                     "",
                     possible_dates_b,
