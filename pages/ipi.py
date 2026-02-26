@@ -311,10 +311,8 @@ def _inject_css_fx():
             margin: 0 0 6px 2px;
             letter-spacing: 0.01em;
           }
-            .fx-panel-gap{ height: 16px; }
-            .fx-gap-large { height: 40px; }
-            .fx-gap-medium { height: 26px; }
-          
+
+          .fx-panel-gap{ height: 16px; }
 
           .fx-panel-wrap{
             background: rgba(230, 243, 255, 0.55);
@@ -509,24 +507,24 @@ def _inject_css_fx():
             line-height: 1;
           }
 
-          /* ── Botón "Abrir detalle" ── */
-          /* apunta a todos los botones dentro del bloque de cards */
+          /* ── Botón "Abrir detalle" integrado como pie de card ── */
           div[data-testid="stVerticalBlock"] button[kind="secondary"] {
-            background: #f1f5f9 !important;
-            border: 1px solid #e2e8f0 !important;
-            border-radius: 10px !important;
-            color: #475569 !important;
-            font-size: 13px !important;
-            font-weight: 600 !important;
+            background: #ffffff !important;
+            border: 1px solid #dde6f0 !important;
+            border-top: 1px solid #e8eff7 !important;
+            border-radius: 0 0 14px 14px !important;
+            color: #2563eb !important;
+            font-size: 12px !important;
+            font-weight: 700 !important;
             letter-spacing: .2px !important;
-            padding: 8px 0 !important;
+            padding: 9px 0 !important;
             box-shadow: none !important;
+            margin-top: -8px !important;
             transition: background .15s, color .15s !important;
           }
           div[data-testid="stVerticalBlock"] button[kind="secondary"]:hover {
-            background: #e2e8f0 !important;
-            color: #1e3a5f !important;
-            border-color: #cbd5e1 !important;
+            background: #eff4ff !important;
+            color: #1d4ed8 !important;
           }
 
           /* legacy — ya no se usan en cards pero sí en modal antiguo si quedara */
@@ -1242,8 +1240,6 @@ def render_ipi(go_to):
             unsafe_allow_html=True,
         )
 
-        st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
-
         if "ipi_modal_open" not in st.session_state:
             st.session_state["ipi_modal_open"] = False
             st.session_state["ipi_modal_div_name"] = None
@@ -1308,6 +1304,7 @@ def render_ipi(go_to):
                         </div>
                       </div>
                     </div>
+                    <div style="height:6px;"></div>
                 """)
 
                 with cols[j]:
