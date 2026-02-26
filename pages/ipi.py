@@ -372,45 +372,47 @@ def _inject_css_fx():
             border: 1px solid #dde6f0;
             border-radius: 14px;
             overflow: hidden;
-            box-shadow: 0 2px 8px rgba(15,55,100,.06);
+            box-shadow: 0 2px 10px rgba(15,55,100,.07);
           }
 
-          /* barra superior de color */
+          /* barra superior — azul institucional único */
           .ipi-card-bar {
-            height: 4px;
+            height: 5px;
             width: 100%;
+            background: #1a56db;
           }
-          .bar-pos { background: linear-gradient(90deg, #22c55e, #86efac); }
-          .bar-neg { background: linear-gradient(90deg, #f43f5e, #fca5a5); }
-          .bar-mix { background: linear-gradient(90deg, #f43f5e 50%, #22c55e 50%); }
+
+          /* clase legacy mantenida pero sin efecto visual */
+          .bar-pos, .bar-neg, .bar-mix { background: #1a56db; }
 
           .ipi-card-body {
-            padding: 13px 14px 12px 14px;
+            padding: 16px 16px 14px 16px;
           }
 
           .ipi-title {
+            font-family: -apple-system, "Source Sans Pro", sans-serif;
             font-weight: 700;
-            font-size: 11.5px;
+            font-size: 13px;
             color: #1e3a5f;
             text-transform: uppercase;
-            letter-spacing: .35px;
-            line-height: 1.35;
-            margin-bottom: 12px;
+            letter-spacing: .4px;
+            line-height: 1.4;
+            margin-bottom: 14px;
           }
 
           /* chips MoM / YoY */
           .ipi-metrics {
             display: flex;
-            gap: 7px;
+            gap: 10px;
           }
 
           .ipi-chip {
             flex: 1;
             border-radius: 10px;
-            padding: 8px 10px;
+            padding: 10px 12px;
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 6px;
           }
           .chip-pos { background: #f0fdf4; border: 1px solid #bbf7d0; }
           .chip-neg { background: #fff1f2; border: 1px solid #fecdd3; }
@@ -423,7 +425,8 @@ def _inject_css_fx():
           }
 
           .ipi-chip-label {
-            font-size: 9.5px;
+            font-family: -apple-system, "Source Sans Pro", sans-serif;
+            font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: .5px;
@@ -431,7 +434,7 @@ def _inject_css_fx():
           }
 
           .ipi-chip-arrow {
-            font-size: 13px;
+            font-size: 15px;
             font-weight: 900;
             line-height: 1;
           }
@@ -440,16 +443,50 @@ def _inject_css_fx():
           .arrow-neu { color: #64748b; }
 
           .ipi-chip-val {
-            font-size: 19px;
-            font-weight: 600;
-            font-family: monospace;
+            font-family: -apple-system, "Source Sans Pro", sans-serif;
+            font-size: 22px;
+            font-weight: 700;
             line-height: 1;
           }
           .val-pos { color: #16a34a; }
           .val-neg { color: #e11d48; }
           .val-neu { color: #64748b; }
 
-          /* mantener clases legacy para el modal (ipi-mini-wrap etc.) */
+          /* ── Modal KPIs: mismo chip format que las cards ── */
+          .ipi-modal-chips {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 14px;
+          }
+          .ipi-modal-chip {
+            flex: 1;
+            border-radius: 10px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+          }
+          .ipi-modal-chip-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          }
+          .ipi-modal-chip-label {
+            font-family: -apple-system, "Source Sans Pro", sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: #7a90a8;
+          }
+          .ipi-modal-chip-val {
+            font-family: -apple-system, "Source Sans Pro", sans-serif;
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 1;
+          }
+
+          /* legacy — ya no se usan en cards pero sí en modal antiguo si quedara */
           .ipi-mini-wrap{ display:flex; gap:12px; margin-bottom:6px; }
           .ipi-mini{
             flex:1;
@@ -1190,20 +1227,25 @@ def render_ipi(go_to):
                         ydf = _compute_yoy_df(s_div_o)
                         v_i_div = ydf["YoY"].dropna().iloc[-1] if ydf["YoY"].notna().any() else None
 
+                mom_modal_str = f"{_fmt_pct_es(v_m_div, 1)}%" if v_m_div is not None else "—"
+                yoy_modal_str = f"{_fmt_pct_es(v_i_div, 1)}%" if v_i_div is not None else "—"
+
                 st.markdown(
                     textwrap.dedent(f"""
-                    <div class="ipi-mini-wrap">
-                      <div class="ipi-mini">
-                        <div class="ipi-mini-lbl">Mensual (s.e)</div>
-                        <div class="ipi-mini-row">
-                          <div class="ipi-dot {_dot_class(v_m_div)}">{_fmt_pct_es(v_m_div, 1)}%</div>
+                    <div class="ipi-modal-chips">
+                      <div class="ipi-modal-chip {_chip_class(v_m_div)}">
+                        <div class="ipi-modal-chip-top">
+                          <span class="ipi-modal-chip-label">MoM</span>
+                          <span class="ipi-chip-arrow {_arrow_color_class(v_m_div)}">{_arrow_dir(v_m_div)}</span>
                         </div>
+                        <div class="ipi-modal-chip-val {_val_class(v_m_div)}">{mom_modal_str}</div>
                       </div>
-                      <div class="ipi-mini">
-                        <div class="ipi-mini-lbl">Interanual</div>
-                        <div class="ipi-mini-row">
-                          <div class="ipi-dot {_dot_class(v_i_div)}">{_fmt_pct_es(v_i_div, 1)}%</div>
+                      <div class="ipi-modal-chip {_chip_class(v_i_div)}">
+                        <div class="ipi-modal-chip-top">
+                          <span class="ipi-modal-chip-label">YoY</span>
+                          <span class="ipi-chip-arrow {_arrow_color_class(v_i_div)}">{_arrow_dir(v_i_div)}</span>
                         </div>
+                        <div class="ipi-modal-chip-val {_val_class(v_i_div)}">{yoy_modal_str}</div>
                       </div>
                     </div>
                     """),
