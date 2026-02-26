@@ -447,7 +447,7 @@ def _inject_css_fx():
 
           .ipi-chip-label {
             font-family: -apple-system, "Source Sans Pro", sans-serif;
-            font-size: 13px;
+            font-size: 15px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: .5px;
