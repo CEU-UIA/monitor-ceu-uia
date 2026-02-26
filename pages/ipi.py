@@ -13,7 +13,7 @@ from services.ipi_data import cargar_ipi_excel, procesar_serie_excel
 
 
 # ============================================================
-# Frases (loading) — mismas del page EMAE (no cambia formato)
+# Frases (loading) — mismas del page EMAE
 # ============================================================
 INDU_LOADING_PHRASES = [
     "La industria aporta más del 18% del valor agregado de la economía argentina.",
@@ -24,6 +24,12 @@ INDU_LOADING_PHRASES = [
 ]
 
 MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+# Link header (pedido)
+INFORME_CEU_URL = "https://uia.org.ar/centro-de-estudios/documentos/actualidad-industrial/?q=Industrial"
+
+# Rebase (pedido)
+BASE_DT = pd.Timestamp("2023-04-01")  # abr-23 (MS)
 
 
 # ============================================================
@@ -70,6 +76,26 @@ def _clean_series(df: pd.DataFrame) -> pd.DataFrame:
     return t.dropna(subset=["Date", "Value"]).sort_values("Date").reset_index(drop=True)
 
 
+def _rebase_100(df: pd.DataFrame, base_dt: pd.Timestamp) -> pd.DataFrame:
+    """Rebase a 100 en base_dt si existe ese mes. Si no existe, devuelve igual."""
+    if df is None or df.empty:
+        return df
+    t = df.copy()
+    t["Date"] = pd.to_datetime(t["Date"], errors="coerce")
+    t["Value"] = pd.to_numeric(t["Value"], errors="coerce")
+    t = t.dropna(subset=["Date", "Value"]).sort_values("Date").reset_index(drop=True)
+
+    base_val = t.loc[t["Date"] == base_dt, "Value"]
+    if base_val.empty:
+        return t
+    b = float(base_val.iloc[0])
+    if b == 0 or np.isnan(b):
+        return t
+
+    t["Value"] = (t["Value"] / b) * 100.0
+    return t
+
+
 # ============================================================
 # Helpers para detectar divisiones en Excel (igual lógica que tenías)
 # ============================================================
@@ -98,6 +124,7 @@ def _build_div_blocks(codes: List[str]) -> Tuple[List[int], Dict[str, int]]:
 
 # ============================================================
 # CSS (COPIA del formato TASA / EMAE — NO MODIFICAR)
+# + agrega estilo del link (pedido)
 # ============================================================
 def _inject_css_fx():
     st.markdown(
@@ -281,6 +308,21 @@ def _inject_css_fx():
             font-weight: 800 !important;
           }
 
+          /* Link “Informe CEU” (pedido) */
+          .fx-report a{
+            display:inline-block;
+            padding:6px 10px;
+            border-radius:999px;
+            border:1px solid #e5e7eb;
+            background:#ffffff;
+            color:#0f172a;
+            font-size:12px;
+            font-weight:700;
+            text-decoration:none;
+            box-shadow:0 2px 4px rgba(0,0,0,0.06);
+            white-space: nowrap;
+          }
+
           @media (max-width: 900px){
             .fx-row{ grid-template-columns: 1fr; row-gap: 10px; }
             .fx-meta{ white-space: normal; }
@@ -364,9 +406,9 @@ def render_ipi(go_to):
     ng_se_raw = procesar_serie_excel(df_c5, 3)   # s.e.
     ng_orig_raw = procesar_serie_excel(df_c2, 3) # original
 
-    # normalizo a formato EMAE: Date/Value
-    df_ng_se = _clean_series(ng_se_raw.rename(columns={"fecha": "Date", "valor": "Value"}))
-    df_ng_o  = _clean_series(ng_orig_raw.rename(columns={"fecha": "Date", "valor": "Value"}))
+    # normalizo a formato EMAE: Date/Value y REBASE (pedido)
+    df_ng_se = _rebase_100(_clean_series(ng_se_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
+    df_ng_o  = _rebase_100(_clean_series(ng_orig_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
 
     if df_ng_se.empty or df_ng_o.empty:
         st.error("No pude extraer la serie de IPI (nivel general) desde el Excel.")
@@ -382,7 +424,7 @@ def render_ipi(go_to):
     mom_val = mom_full["MoM"].dropna().iloc[-1] if mom_full["MoM"].notna().any() else None
     mom_date = mom_full.dropna(subset=["MoM"]).iloc[-1]["Date"] if mom_full["MoM"].notna().any() else None
 
-    # --- lista de divisiones (como tu lógica anterior) ---
+    # --- lista de divisiones (misma lógica) ---
     divs_idxs = [
         i for i, n in enumerate(names_c5)
         if i >= 3 and i % 2 != 0 and n not in ("", "Período", "IPI Manufacturero")
@@ -400,34 +442,39 @@ def render_ipi(go_to):
 
         # s.e. (Cuadro 5)
         s_se_raw = procesar_serie_excel(df_c5, idx)
-        s_se = _clean_series(s_se_raw.rename(columns={"fecha": "Date", "valor": "Value"}))
+        s_se = _rebase_100(_clean_series(s_se_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
 
         # original (Cuadro 2) por header idx
         header_idx = code_to_header_idx_c2.get(div_code, None)
         if header_idx is not None:
             s_o_raw = procesar_serie_excel(df_c2, int(header_idx))
-            s_o = _clean_series(s_o_raw.rename(columns={"fecha": "Date", "valor": "Value"}))
+            s_o = _rebase_100(_clean_series(s_o_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
         else:
             s_o = pd.DataFrame(columns=["Date", "Value"])
 
-        # guard: si no hay nada, igual lo incluyo (pero no se graficará)
         SERIES[div_name] = (s_o, s_se)
 
     # =========================================================
     # BLOQUE 1 — IPI (mismo panel que EMAE)
+    # + link (pedido)
+    # + rebase (ya aplicado a SERIES)
+    # + medida extra: "Variación acumulada sin estacionalidad" (pedido)
     # =========================================================
     with st.container():
         _apply_panel_wrap("ipi_panel_marker")
 
-        # Header (mismo HTML que EMAE)
+        # Header (mismo HTML que EMAE + link arriba a la derecha)
         a_yoy, cls_yoy = _arrow_cls(yoy_val)
         a_mom, cls_mom = _arrow_cls(mom_val)
 
         header_lines = [
             '<div class="fx-wrap">',
-            '  <div class="fx-title-row">',
-            '    <div class="fx-icon-badge">🏭</div>',
-            '    <div class="fx-title">Índice de Producción Industrial (IPI)</div>',
+            '  <div class="fx-title-row" style="justify-content:space-between;">',
+            '    <div style="display:flex; align-items:center; gap:12px;">',
+            '      <div class="fx-icon-badge">🏭</div>',
+            '      <div class="fx-title">Índice de Producción Industrial (IPI)</div>',
+            "    </div>",
+            f'    <div class="fx-report"><a href="{INFORME_CEU_URL}" target="_blank">📄 Ver último Informe Industrial</a></div>',
             "  </div>",
             '  <div class="fx-card">',
             '    <div class="fx-row">',
@@ -468,7 +515,11 @@ def render_ipi(go_to):
             st.markdown("<div class='fx-panel-title'>Seleccioná la medida</div>", unsafe_allow_html=True)
             st.selectbox(
                 "",
-                ["Nivel desestacionalizado", "Nivel original"],
+                [
+                    "Nivel desestacionalizado",
+                    "Nivel original",
+                    "Variación acumulada sin estacionalidad",
+                ],
                 key="ipi_medida",
                 label_visibility="collapsed",
             )
@@ -495,7 +546,11 @@ def render_ipi(go_to):
 
         for vname in vars_sel:
             df_o, df_s = SERIES.get(vname, (pd.DataFrame(), pd.DataFrame()))
-            base = df_s if medida == "Nivel desestacionalizado" else df_o
+            if medida == "Nivel original":
+                base = df_o
+            else:
+                base = df_s  # desestacionalizado o acumulada s.e.
+
             if base is not None and not base.empty and "Date" in base.columns:
                 date_mins.append(pd.to_datetime(base["Date"].min()))
                 date_maxs.append(pd.to_datetime(base["Date"].max()))
@@ -537,24 +592,54 @@ def render_ipi(go_to):
         start_ts = pd.Timestamp(start_d).to_period("M").to_timestamp()
         end_ts = pd.Timestamp(end_d).to_period("M").to_timestamp()
 
-        # Plot (niveles)
+        # Plot
         fig = go.Figure()
 
-        for vname in vars_sel:
-            df_o, df_s = SERIES.get(vname, (pd.DataFrame(columns=["Date", "Value"]), pd.DataFrame(columns=["Date", "Value"])))
-            base = df_s if medida == "Nivel desestacionalizado" else df_o
-            base = base[(base["Date"] >= start_ts) & (base["Date"] <= end_ts)].copy()
+        if medida in ("Nivel desestacionalizado", "Nivel original"):
+            for vname in vars_sel:
+                df_o, df_s = SERIES.get(
+                    vname,
+                    (pd.DataFrame(columns=["Date", "Value"]), pd.DataFrame(columns=["Date", "Value"])),
+                )
+                base = df_s if medida == "Nivel desestacionalizado" else df_o
+                base = base[(base["Date"] >= start_ts) & (base["Date"] <= end_ts)].copy()
 
-            if not base.empty:
-                suf = "(s.e.)" if medida == "Nivel desestacionalizado" else "(original)"
+                if not base.empty:
+                    suf = "(s.e.)" if medida == "Nivel desestacionalizado" else "(original)"
+                    fig.add_trace(
+                        go.Scatter(
+                            x=base["Date"],
+                            y=base["Value"],
+                            mode="lines+markers",
+                            name=f"{vname} {suf}",
+                        )
+                    )
+            fig.update_yaxes(title="Índice (base 100=abr-23)")
+
+        else:
+            # Variación acumulada sin estacionalidad:
+            # acumulado sobre el rango seleccionado = (nivel_s.e._t / nivel_s.e._inicio - 1) * 100
+            for vname in vars_sel:
+                _, df_s = SERIES.get(vname, (pd.DataFrame(columns=["Date", "Value"]), pd.DataFrame(columns=["Date", "Value"])))
+                t = df_s[(df_s["Date"] >= start_ts) & (df_s["Date"] <= end_ts)].copy()
+                t = t.dropna(subset=["Date", "Value"]).sort_values("Date")
+                if t.empty:
+                    continue
+                base_val = float(t["Value"].iloc[0])
+                if base_val == 0 or np.isnan(base_val):
+                    continue
+                t["Acc"] = (t["Value"] / base_val - 1.0) * 100.0
+
                 fig.add_trace(
                     go.Scatter(
-                        x=base["Date"],
-                        y=base["Value"],
+                        x=t["Date"],
+                        y=t["Acc"],
                         mode="lines+markers",
-                        name=f"{vname} {suf}",
+                        name=f"{vname} (acum s.e.)",
                     )
                 )
+            fig.add_hline(y=0, line_width=1, line_dash="solid", line_color="#666666")
+            fig.update_yaxes(ticksuffix="%", title="Variación acumulada (%)")
 
         fig.update_layout(
             height=520,
@@ -572,7 +657,7 @@ def render_ipi(go_to):
             fig,
             use_container_width=True,
             config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
-            key="chart_ipi_lvl",
+            key="chart_ipi_panel1",
         )
 
         st.markdown(
@@ -584,6 +669,7 @@ def render_ipi(go_to):
 
     # =========================================================
     # BLOQUE 2 — IPI por ramas (comparación A/B) — estilo EMAE sectores
+    # + “Variación serie sin estacionalidad”: Período B no repite mes de Período A (pedido)
     # =========================================================
     st.divider()
 
@@ -603,9 +689,6 @@ def render_ipi(go_to):
         st.markdown("<div class='fx-panel-gap'></div>", unsafe_allow_html=True)
 
         # Armo tabla "larga" para comparación por ramas
-        # - Para acumulada y anual uso ORIGINAL (Cuadro 2)
-        # - Para "Variación serie sin estacionalidad" uso S.E. (Cuadro 5)
-        # Incluyo IPI - Nivel general siempre.
         rows_o = []
         rows_s = []
 
@@ -635,8 +718,6 @@ def render_ipi(go_to):
         last_month_label = MESES_ES[last_month_num - 1]  # ene..dic
 
         years_all = sorted(pd.to_datetime(df_o_long["Date"]).dt.year.unique().tolist(), reverse=True) if not df_o_long.empty else []
-        years_all_s = sorted(pd.to_datetime(df_s_long["Date"]).dt.year.unique().tolist(), reverse=True) if not df_s_long.empty else []
-        years_any = sorted(list(set(years_all + years_all_s)), reverse=True)
 
         def _month_opt_label(dt: pd.Timestamp) -> str:
             return _month_label_es(pd.to_datetime(dt))
@@ -676,7 +757,6 @@ def render_ipi(go_to):
         # =========================
         colA, colB = st.columns(2, gap="large")
 
-        # 1) Acumulado anual (ene-último mes), ORIGINAL
         if mode_key == "acum":
             if not years_all:
                 st.warning("No hay años disponibles en la serie original.")
@@ -708,12 +788,9 @@ def render_ipi(go_to):
 
             subtitle = f"Comparación acumulada ene–{last_month_label} (promedio) · A={year_a} / B={year_b}"
 
-        # 2) Variación anual: último mes disponible vs mismo mes en otros años (ORIGINAL),
-        #    y en selectores se ve dic-2025, dic-2024, etc.
         elif mode_key == "anual":
             month_num = last_month_num
 
-            # solo fechas donde exista ese mes (original)
             possible_dates = []
             if not df_o_long.empty:
                 for y in years_all:
@@ -763,7 +840,6 @@ def render_ipi(go_to):
 
             subtitle = f"Comparación anual ({MESES_ES[month_num-1]}) · A={_month_opt_label(dt_a)} / B={_month_opt_label(dt_b)}"
 
-        # 3) Variación serie sin estacionalidad: cualquier mes A/B, S.E.
         else:
             if df_s_long.empty:
                 st.warning("No hay datos sin estacionalidad disponibles para esta comparación.")
@@ -772,10 +848,9 @@ def render_ipi(go_to):
             possible_dates = sorted(df_s_long["Date"].dropna().unique().tolist(), reverse=True)
             possible_dates = [pd.to_datetime(d) for d in possible_dates]
 
+            # A (cualquier mes)
             if "ipi_sec_se_month_a" not in st.session_state:
                 st.session_state["ipi_sec_se_month_a"] = possible_dates[0] if possible_dates else None
-            if "ipi_sec_se_month_b" not in st.session_state:
-                st.session_state["ipi_sec_se_month_b"] = possible_dates[1] if len(possible_dates) > 1 else (possible_dates[0] if possible_dates else None)
 
             with colA:
                 st.markdown("<div class='fx-panel-title'>Período A</div>", unsafe_allow_html=True)
@@ -787,17 +862,28 @@ def render_ipi(go_to):
                     label_visibility="collapsed",
                 )
 
+            dt_a = pd.to_datetime(st.session_state.get("ipi_sec_se_month_a"))
+
+            # B: excluir el MISMO MES (month) que A (pedido)
+            possible_dates_b = [d for d in possible_dates if pd.to_datetime(d).month != dt_a.month]
+            if not possible_dates_b:
+                st.warning("No hay meses alternativos para Período B (sin repetir el mes de A).")
+                return
+
+            # si el B guardado quedó inválido, resetear
+            if ("ipi_sec_se_month_b" not in st.session_state) or (pd.to_datetime(st.session_state["ipi_sec_se_month_b"]).month == dt_a.month):
+                st.session_state["ipi_sec_se_month_b"] = possible_dates_b[0]
+
             with colB:
                 st.markdown("<div class='fx-panel-title'>Período B</div>", unsafe_allow_html=True)
                 st.selectbox(
                     "",
-                    possible_dates,
+                    possible_dates_b,
                     key="ipi_sec_se_month_b",
                     format_func=_month_opt_label,
                     label_visibility="collapsed",
                 )
 
-            dt_a = pd.to_datetime(st.session_state.get("ipi_sec_se_month_a"))
             dt_b = pd.to_datetime(st.session_state.get("ipi_sec_se_month_b"))
 
             def _month_level_by_sector_se(dt: pd.Timestamp) -> pd.Series:
@@ -836,7 +922,7 @@ def render_ipi(go_to):
 
         y_plain = common["Sector"].tolist()
 
-        # Bold solo el nivel general (pedido explícito: incluir y destacar)
+        # Bold solo el nivel general
         y = [
             "<b>IPI - Nivel general</b>" if s == "IPI - Nivel general" else s
             for s in y_plain
