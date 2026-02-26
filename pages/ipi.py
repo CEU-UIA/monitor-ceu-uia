@@ -397,11 +397,11 @@ def _inject_css_fx():
           .ipi-card-bar {
             height: 5px;
             width: 100%;
-            background: #1e3a8a;
+            background: #0ea5e9;
           }
 
           /* clase legacy mantenida pero sin efecto visual */
-          .bar-pos, .bar-neg, .bar-mix { background: #1e3a8a; }
+          .bar-pos, .bar-neg, .bar-mix { background: #0ea5e9; }
 
           .ipi-card-body {
             padding: 16px 16px 14px 16px;
@@ -1239,7 +1239,7 @@ def render_ipi(go_to):
             """),
             unsafe_allow_html=True,
         )
-        st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
 
         if "ipi_modal_open" not in st.session_state:
             st.session_state["ipi_modal_open"] = False
