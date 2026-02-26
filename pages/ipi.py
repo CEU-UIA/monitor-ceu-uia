@@ -77,27 +77,24 @@ def _clean_series(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _rebase_100(df: pd.DataFrame, base_dt: pd.Timestamp) -> pd.DataFrame:
-    """Rebase a 100 en base_dt si existe ese mes. Si no existe, devuelve igual."""
     if df is None or df.empty:
         return df
     t = df.copy()
     t["Date"] = pd.to_datetime(t["Date"], errors="coerce")
     t["Value"] = pd.to_numeric(t["Value"], errors="coerce")
     t = t.dropna(subset=["Date", "Value"]).sort_values("Date").reset_index(drop=True)
-
     base_val = t.loc[t["Date"] == base_dt, "Value"]
     if base_val.empty:
         return t
     b = float(base_val.iloc[0])
     if b == 0 or np.isnan(b):
         return t
-
     t["Value"] = (t["Value"] / b) * 100.0
     return t
 
 
 # ============================================================
-# Helpers para detectar divisiones en Excel (igual lógica que tenías)
+# Helpers para detectar divisiones en Excel
 # ============================================================
 def _is_header_div(code_str: str) -> bool:
     s = str(code_str).strip()
@@ -134,9 +131,42 @@ def _dot_class(x: float) -> str:
         return "ipi-neutral"
     return "ipi-up" if float(x) > 0 else "ipi-down"
 
+
+# ---- helpers para las cards nuevas ----
+def _chip_class(x: float) -> str:
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return "chip-neu"
+    return "chip-pos" if x > 0 else "chip-neg"
+
+def _val_class(x: float) -> str:
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return "val-neu"
+    return "val-pos" if x > 0 else "val-neg"
+
+def _arrow_dir(x: float) -> str:
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return "→"
+    return "↑" if x > 0 else "↓"
+
+def _arrow_color_class(x: float) -> str:
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return "arrow-neu"
+    return "arrow-up" if x > 0 else "arrow-dn"
+
+def _bar_class(v_m: float, v_i: float) -> str:
+    m_pos = v_m is not None and not (isinstance(v_m, float) and np.isnan(v_m)) and v_m >= 0
+    i_pos = v_i is not None and not (isinstance(v_i, float) and np.isnan(v_i)) and v_i >= 0
+    m_neg = v_m is not None and not (isinstance(v_m, float) and np.isnan(v_m)) and v_m < 0
+    i_neg = v_i is not None and not (isinstance(v_i, float) and np.isnan(v_i)) and v_i < 0
+    if m_pos and i_pos:
+        return "bar-pos"
+    if m_neg and i_neg:
+        return "bar-neg"
+    return "bar-mix"
+
+
 # ============================================================
-# CSS (COPIA del formato TASA / EMAE — NO MODIFICAR)
-# + agrega estilo del link (pedido)
+# CSS
 # ============================================================
 def _inject_css_fx():
     st.markdown(
@@ -266,9 +296,6 @@ def _inject_css_fx():
 
           .fx-panel-gap{ height: 16px; }
 
-          /* ===============================
-             PANEL GRANDE REAL (aplicado por JS al contenedor de Streamlit)
-             =============================== */
           .fx-panel-wrap{
             background: rgba(230, 243, 255, 0.55);
             border: 1px solid rgba(15, 55, 100, 0.10);
@@ -278,7 +305,6 @@ def _inject_css_fx():
             margin-top: 10px;
           }
 
-          /* Evitar “cortes” visuales dentro del panel */
           .fx-panel-wrap div[data-testid="stSelectbox"],
           .fx-panel-wrap div[data-testid="stMultiSelect"],
           .fx-panel-wrap div[data-testid="stSlider"],
@@ -288,7 +314,6 @@ def _inject_css_fx():
             box-shadow: none !important;
           }
 
-          /* Estilo combobox base (default) */
           .fx-panel-wrap div[role="combobox"]{
             border-radius: 16px !important;
             border: 1px solid rgba(15,23,42,0.10) !important;
@@ -296,7 +321,6 @@ def _inject_css_fx():
             box-shadow: 0 10px 18px rgba(15, 55, 100, 0.08) !important;
           }
 
-          /* Selectbox medida estilo chip (oscuro + texto azul) */
           .fx-panel-wrap div[data-testid="stSelectbox"] div[role="combobox"]{
             background: #0b2a55 !important;
             border: 1px solid rgba(255,255,255,0.14) !important;
@@ -308,7 +332,6 @@ def _inject_css_fx():
             font-weight: 800 !important;
           }
 
-          /* Tags multiselect (texto BLANCO garantizado) */
           .fx-panel-wrap span[data-baseweb="tag"]{
             background: #0b2a55 !important;
             border-radius: 10px !important;
@@ -320,7 +343,6 @@ def _inject_css_fx():
             font-weight: 800 !important;
           }
 
-          /* Link “Informe CEU” (pedido) */
           .fx-report a{
             display:inline-block;
             padding:6px 10px;
@@ -342,28 +364,92 @@ def _inject_css_fx():
           }
 
           /* =========================
-             IPI – Cards + Modal (bloque extra)
+             IPI – Cards nuevas
              ========================= */
-          .ipi-card{
-            background:#ffffff;
-            border:1px solid #e1e8ed;
-            border-radius:14px;
-            padding:14px 14px 12px 14px;
-            box-shadow:0 4px 6px rgba(0,0,0,0.05);
-          }
-          .ipi-title{ font-weight:900; font-size:18px; color:#0f2a43; margin-bottom:8px; }
-          .ipi-row{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
-          .ipi-label{ font-size:16px; font-weight:700; color:#526484; }
-          .ipi-badge{
-            width:52px; height:52px; border-radius:999px;
-            display:flex; align-items:center; justify-content:center;
-            font-weight:900; font-size:18px;
-            border:1px solid transparent;
-          }
-          .ipi-up{ background:rgba(22,163,74,.12); color:rgb(22,163,74); border-color:rgba(22,163,74,.25); }
-          .ipi-down{ background:rgba(220,38,38,.12); color:rgb(220,38,38); border-color:rgba(220,38,38,.25); }
-          .ipi-neutral{ background:rgba(100,116,139,.12); color:rgb(100,116,139); border-color:rgba(100,116,139,.22); }
 
+          .ipi-card {
+            background: #ffffff;
+            border: 1px solid #dde6f0;
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(15,55,100,.06);
+          }
+
+          /* barra superior de color */
+          .ipi-card-bar {
+            height: 4px;
+            width: 100%;
+          }
+          .bar-pos { background: linear-gradient(90deg, #22c55e, #86efac); }
+          .bar-neg { background: linear-gradient(90deg, #f43f5e, #fca5a5); }
+          .bar-mix { background: linear-gradient(90deg, #f43f5e 50%, #22c55e 50%); }
+
+          .ipi-card-body {
+            padding: 13px 14px 12px 14px;
+          }
+
+          .ipi-title {
+            font-weight: 700;
+            font-size: 11.5px;
+            color: #1e3a5f;
+            text-transform: uppercase;
+            letter-spacing: .35px;
+            line-height: 1.35;
+            margin-bottom: 12px;
+          }
+
+          /* chips MoM / YoY */
+          .ipi-metrics {
+            display: flex;
+            gap: 7px;
+          }
+
+          .ipi-chip {
+            flex: 1;
+            border-radius: 10px;
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+          }
+          .chip-pos { background: #f0fdf4; border: 1px solid #bbf7d0; }
+          .chip-neg { background: #fff1f2; border: 1px solid #fecdd3; }
+          .chip-neu { background: #f8fafc; border: 1px solid #e2e8f0; }
+
+          .ipi-chip-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          }
+
+          .ipi-chip-label {
+            font-size: 9.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: #7a90a8;
+          }
+
+          .ipi-chip-arrow {
+            font-size: 13px;
+            font-weight: 900;
+            line-height: 1;
+          }
+          .arrow-up  { color: #16a34a; }
+          .arrow-dn  { color: #e11d48; }
+          .arrow-neu { color: #64748b; }
+
+          .ipi-chip-val {
+            font-size: 19px;
+            font-weight: 600;
+            font-family: monospace;
+            line-height: 1;
+          }
+          .val-pos { color: #16a34a; }
+          .val-neg { color: #e11d48; }
+          .val-neu { color: #64748b; }
+
+          /* mantener clases legacy para el modal (ipi-mini-wrap etc.) */
           .ipi-mini-wrap{ display:flex; gap:12px; margin-bottom:6px; }
           .ipi-mini{
             flex:1;
@@ -381,6 +467,10 @@ def _inject_css_fx():
             font-weight:900; font-size:18px;
             border:1px solid transparent;
           }
+          .ipi-up{ background:rgba(22,163,74,.12); color:rgb(22,163,74); border-color:rgba(22,163,74,.25); }
+          .ipi-down{ background:rgba(220,38,38,.12); color:rgb(220,38,38); border-color:rgba(220,38,38,.25); }
+          .ipi-neutral{ background:rgba(100,116,139,.12); color:rgb(100,116,139); border-color:rgba(100,116,139,.22); }
+
         </style>
         """
         ),
@@ -426,15 +516,9 @@ def _apply_panel_wrap(marker_id: str):
 def render_ipi(go_to):
     _inject_css_fx()
 
-    # =========================
-    # Volver (igual patrón EMAE)
-    # =========================
     if st.button("← Volver"):
         go_to("home")
 
-    # =========================
-    # Load data (Excel INDEC)
-    # =========================
     fact = st.empty()
     fact.info("💡 " + random.choice(INDU_LOADING_PHRASES))
 
@@ -447,7 +531,6 @@ def render_ipi(go_to):
         st.error("No pude cargar el Excel del IPI Manufacturero (INDEC).")
         return
 
-    # --- headers/nombres/códigos ---
     names_c2 = [str(x).strip() for x in df_c2.iloc[3].fillna("").tolist()]
     codes_c2 = [str(x).strip() for x in df_c2.iloc[2].fillna("").tolist()]
     names_c5 = [str(x).strip() for x in df_c5.iloc[3].fillna("").tolist()]
@@ -455,11 +538,9 @@ def render_ipi(go_to):
 
     header_idxs_c2, code_to_header_idx_c2 = _build_div_blocks(codes_c2)
 
-    # --- Total (nivel general): col 3 ---
-    ng_se_raw = procesar_serie_excel(df_c5, 3)   # s.e.
-    ng_orig_raw = procesar_serie_excel(df_c2, 3) # original
+    ng_se_raw = procesar_serie_excel(df_c5, 3)
+    ng_orig_raw = procesar_serie_excel(df_c2, 3)
 
-    # normalizo a formato EMAE: Date/Value y REBASE (pedido)
     df_ng_se = _rebase_100(_clean_series(ng_se_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
     df_ng_o  = _rebase_100(_clean_series(ng_orig_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
 
@@ -467,7 +548,6 @@ def render_ipi(go_to):
         st.error("No pude extraer la serie de IPI (nivel general) desde el Excel.")
         return
 
-    # --- KPIs header (YoY original + MoM s.e.) ---
     yoy_full = _compute_yoy_df(df_ng_o)
     mom_full = _compute_mom_df(df_ng_se)
 
@@ -477,14 +557,11 @@ def render_ipi(go_to):
     mom_val = mom_full["MoM"].dropna().iloc[-1] if mom_full["MoM"].notna().any() else None
     mom_date = mom_full.dropna(subset=["MoM"]).iloc[-1]["Date"] if mom_full["MoM"].notna().any() else None
 
-    # --- lista de divisiones (misma lógica) ---
     divs_idxs = [
         i for i, n in enumerate(names_c5)
         if i >= 3 and i % 2 != 0 and n not in ("", "Período", "IPI Manufacturero")
     ]
 
-    # --- diccionario de series por variable (label -> (orig, se)) ---
-    # Incluye TOTAL + todas las divisiones
     SERIES: Dict[str, Tuple[pd.DataFrame, pd.DataFrame]] = {
         "IPI - Nivel general": (df_ng_o, df_ng_se),
     }
@@ -493,11 +570,9 @@ def render_ipi(go_to):
         div_name = names_c5[idx]
         div_code = str(codes_c5[idx]).strip()
 
-        # s.e. (Cuadro 5)
         s_se_raw = procesar_serie_excel(df_c5, idx)
         s_se = _rebase_100(_clean_series(s_se_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
 
-        # original (Cuadro 2) por header idx
         header_idx = code_to_header_idx_c2.get(div_code, None)
         if header_idx is not None:
             s_o_raw = procesar_serie_excel(df_c2, int(header_idx))
@@ -508,15 +583,11 @@ def render_ipi(go_to):
         SERIES[div_name] = (s_o, s_se)
 
     # =========================================================
-    # BLOQUE 1 — IPI (mismo panel que EMAE)
-    # + link (pedido)
-    # + rebase (ya aplicado a SERIES)
-    # + medida extra: "Variación acumulada sin estacionalidad" (pedido)
+    # BLOQUE 1 — IPI
     # =========================================================
     with st.container():
         _apply_panel_wrap("ipi_panel_marker")
 
-        # Header (mismo HTML que EMAE + link arriba a la derecha)
         a_yoy, cls_yoy = _arrow_cls(yoy_val)
         a_mom, cls_mom = _arrow_cls(mom_val)
 
@@ -555,13 +626,11 @@ def render_ipi(go_to):
 
         st.markdown("<div class='fx-panel-gap'></div>", unsafe_allow_html=True)
 
-        # Defaults (state)
         if "ipi_medida" not in st.session_state:
             st.session_state["ipi_medida"] = "Nivel desestacionalizado"
         if "ipi_vars" not in st.session_state:
             st.session_state["ipi_vars"] = ["IPI - Nivel general"]
 
-        # Controles (mismo layout)
         c1, c2 = st.columns(2, gap="large")
 
         with c1:
@@ -593,7 +662,6 @@ def render_ipi(go_to):
 
         medida = st.session_state.get("ipi_medida", "Nivel desestacionalizado")
 
-        # Slider mensual (select_slider) armado con min/max real sobre series seleccionadas
         date_mins = []
         date_maxs = []
 
@@ -602,13 +670,12 @@ def render_ipi(go_to):
             if medida == "Nivel original":
                 base = df_o
             else:
-                base = df_s  # desestacionalizado o acumulada s.e.
+                base = df_s
 
             if base is not None and not base.empty and "Date" in base.columns:
                 date_mins.append(pd.to_datetime(base["Date"].min()))
                 date_maxs.append(pd.to_datetime(base["Date"].max()))
 
-        # fallback seguro
         if not date_mins or not date_maxs:
             date_mins = [pd.to_datetime(df_ng_se["Date"].min())]
             date_maxs = [pd.to_datetime(df_ng_se["Date"].max())]
@@ -623,7 +690,6 @@ def render_ipi(go_to):
         )
         months_d = [m.date() for m in months]
 
-        # default: últimos 5 años si existe
         try:
             default_start = (pd.Timestamp(max_real) - pd.DateOffset(years=4)).date()
         except Exception:
@@ -645,7 +711,6 @@ def render_ipi(go_to):
         start_ts = pd.Timestamp(start_d).to_period("M").to_timestamp()
         end_ts = pd.Timestamp(end_d).to_period("M").to_timestamp()
 
-        # Plot
         fig = go.Figure()
 
         if medida in ("Nivel desestacionalizado", "Nivel original"):
@@ -670,8 +735,6 @@ def render_ipi(go_to):
             fig.update_yaxes(title="Índice (base 100=abr-23)")
 
         else:
-            # Variación acumulada sin estacionalidad:
-            # acumulado sobre el rango seleccionado = (nivel_s.e._t / nivel_s.e._inicio - 1) * 100
             for vname in vars_sel:
                 _, df_s = SERIES.get(vname, (pd.DataFrame(columns=["Date", "Value"]), pd.DataFrame(columns=["Date", "Value"])))
                 t = df_s[(df_s["Date"] >= start_ts) & (df_s["Date"] <= end_ts)].copy()
@@ -703,7 +766,6 @@ def render_ipi(go_to):
             dragmode=False,
         )
 
-        # Aire a la derecha
         x_max = pd.Timestamp(end_ts) + pd.Timedelta(days=10)
         fig.update_xaxes(range=[pd.Timestamp(start_ts), x_max])
 
@@ -722,8 +784,7 @@ def render_ipi(go_to):
         )
 
     # =========================================================
-    # BLOQUE 2 — IPI por ramas (comparación A/B) — estilo EMAE sectores
-    # + “Variación serie sin estacionalidad”: Período B no repite mes de Período A (pedido)
+    # BLOQUE 2 — IPI por ramas
     # =========================================================
     st.divider()
 
@@ -742,7 +803,6 @@ def render_ipi(go_to):
 
         st.markdown("<div class='fx-panel-gap'></div>", unsafe_allow_html=True)
 
-        # Armo tabla "larga" para comparación por ramas
         rows_o = []
         rows_s = []
 
@@ -763,22 +823,18 @@ def render_ipi(go_to):
             st.error("No hay datos suficientes para construir la apertura por ramas.")
             return
 
-        # Último mes disponible (preferimos original; si no, s.e.)
         max_dt_o = pd.to_datetime(df_o_long["Date"].max()) if not df_o_long.empty else None
         max_dt_s = pd.to_datetime(df_s_long["Date"].max()) if not df_s_long.empty else None
         max_dt = max([d for d in [max_dt_o, max_dt_s] if d is not None])
 
         last_month_num = int(max_dt.month)
-        last_month_label = MESES_ES[last_month_num - 1]  # ene..dic
+        last_month_label = MESES_ES[last_month_num - 1]
 
         years_all = sorted(pd.to_datetime(df_o_long["Date"]).dt.year.unique().tolist(), reverse=True) if not df_o_long.empty else []
 
         def _month_opt_label(dt: pd.Timestamp) -> str:
             return _month_label_es(pd.to_datetime(dt))
 
-        # =========================
-        # Tipo de comparación (3 opciones)
-        # =========================
         acc_label = f"Variación acumulada anual (ene-{last_month_label})"
 
         MODE_LABELS = {
@@ -806,9 +862,6 @@ def render_ipi(go_to):
         with r1c2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
 
-        # =========================
-        # Período A / B
-        # =========================
         colA, colB = st.columns(2, gap="large")
 
         if mode_key == "acum":
@@ -902,7 +955,6 @@ def render_ipi(go_to):
             possible_dates = sorted(df_s_long["Date"].dropna().unique().tolist(), reverse=True)
             possible_dates = [pd.to_datetime(d) for d in possible_dates]
 
-            # A (cualquier mes)
             if "ipi_sec_se_month_a" not in st.session_state:
                 st.session_state["ipi_sec_se_month_a"] = possible_dates[0] if possible_dates else None
 
@@ -918,13 +970,11 @@ def render_ipi(go_to):
 
             dt_a = pd.to_datetime(st.session_state.get("ipi_sec_se_month_a"))
 
-            # B: excluir el MISMO MES (month) que A (pedido)
             possible_dates_b = [d for d in possible_dates if pd.to_datetime(d).month != dt_a.month]
             if not possible_dates_b:
                 st.warning("No hay meses alternativos para Período Inicial (sin repetir el mes de A).")
                 return
 
-            # si el B guardado quedó inválido, resetear
             if ("ipi_sec_se_month_b" not in st.session_state) or (pd.to_datetime(st.session_state["ipi_sec_se_month_b"]).month == dt_a.month):
                 st.session_state["ipi_sec_se_month_b"] = possible_dates_b[0]
 
@@ -949,9 +999,6 @@ def render_ipi(go_to):
 
             subtitle = f"Comparación serie s.e. · A={_month_opt_label(dt_a)} / B={_month_opt_label(dt_b)}"
 
-        # =========================
-        # %Δ = (A/B - 1) * 100
-        # =========================
         common = pd.DataFrame({"A": A, "B": B}).dropna()
         common = common[(common["A"] > 0) & (common["B"] > 0)]
 
@@ -961,11 +1008,8 @@ def render_ipi(go_to):
 
         common["pct"] = (common["A"] / common["B"] - 1.0) * 100.0
         common = common.reset_index().rename(columns={"index": "Sector"})
-
-        # orden desc por variación
         common = common.sort_values("pct", ascending=False).reset_index(drop=True)
 
-        # Plot: barras horizontales divergentes (mismo estilo EMAE)
         x = common["pct"].values
         x_min = float(np.nanmin(x)) if len(x) else 0.0
         x_max = float(np.nanmax(x)) if len(x) else 0.0
@@ -975,8 +1019,6 @@ def render_ipi(go_to):
         x_right = max(0.0, x_max) + pad
 
         y_plain = common["Sector"].tolist()
-
-        # Bold solo el nivel general
         y = [
             "<b>IPI - Nivel general</b>" if s == "IPI - Nivel general" else s
             for s in y_plain
@@ -1036,17 +1078,12 @@ def render_ipi(go_to):
         )
 
         # =========================================================
-        # EXTRA — Cards por rama + modal (tabla + gráfico)
-        # (debajo del bloque 2, adentro del panel celeste)
+        # Cards por rama — NUEVO FORMATO
         # =========================================================
-
         st.markdown("<div class='fx-panel-gap'></div>", unsafe_allow_html=True)
         st.markdown("<div class='fx-panel-title'>Detalle por rama</div>", unsafe_allow_html=True)
         st.caption("Hacé click en una rama para ver variaciones, subsectores y la serie (s.e.).")
 
-        # -------------------------
-        # Session state del modal
-        # -------------------------
         if "ipi_modal_open" not in st.session_state:
             st.session_state["ipi_modal_open"] = False
             st.session_state["ipi_modal_div_name"] = None
@@ -1059,17 +1096,15 @@ def render_ipi(go_to):
             st.session_state["ipi_modal_div_code"] = div_code
             st.session_state["ipi_modal_div_idx_c5"] = div_idx_c5
 
-        # -------------------------
-        # Cards (3 columnas)
-        # -------------------------
+        # ── Cards (3 columnas) ──────────────────────────────────
         for start in range(0, len(divs_idxs), 3):
             cols = st.columns(3, vertical_alignment="top")
 
             for j, idx in enumerate(divs_idxs[start:start + 3]):
-                name = names_c5[idx]
+                name     = names_c5[idx]
                 div_code = str(codes_c5[idx]).strip()
 
-                # Mensual (s.e.) desde Cuadro 5 (rebased ya en SERIES, pero acá usamos extracción directa)
+                # MoM (s.e.)
                 s_se_raw = procesar_serie_excel(df_c5, idx)
                 s_se = _rebase_100(_clean_series(s_se_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
                 v_m = None
@@ -1077,7 +1112,7 @@ def render_ipi(go_to):
                     s_tmp = _compute_mom_df(s_se)
                     v_m = s_tmp["MoM"].dropna().iloc[-1] if s_tmp["MoM"].notna().any() else None
 
-                # Interanual (original) desde Cuadro 2 (header idx)
+                # YoY (original)
                 v_i = None
                 header_idx = code_to_header_idx_c2.get(div_code, None)
                 if header_idx is not None:
@@ -1087,17 +1122,29 @@ def render_ipi(go_to):
                         s_y = _compute_yoy_df(s_o)
                         v_i = s_y["YoY"].dropna().iloc[-1] if s_y["YoY"].notna().any() else None
 
+                mom_str = f"{_fmt_pct_es(v_m, 1)}%" if v_m is not None else "—"
+                yoy_str = f"{_fmt_pct_es(v_i, 1)}%" if v_i is not None else "—"
+
                 card_html = textwrap.dedent(f"""
                     <div class="ipi-card">
-                      <div class="ipi-title">{name}</div>
-                      <div class="ipi-row">
-                        <div style="display:flex; gap:10px; align-items:center;">
-                          <div class="ipi-badge {_dot_class(v_m)}">{_fmt_pct_es(v_m, 1)}%</div>
-                          <div><div class="ipi-label">Mensual (s.e)</div></div>
-                        </div>
-                        <div style="display:flex; gap:10px; align-items:center;">
-                          <div class="ipi-badge {_dot_class(v_i)}">{_fmt_pct_es(v_i, 1)}%</div>
-                          <div><div class="ipi-label">Interanual</div></div>
+                      <div class="ipi-card-bar {_bar_class(v_m, v_i)}"></div>
+                      <div class="ipi-card-body">
+                        <div class="ipi-title">{name}</div>
+                        <div class="ipi-metrics">
+                          <div class="ipi-chip {_chip_class(v_m)}">
+                            <div class="ipi-chip-top">
+                              <span class="ipi-chip-label">MoM</span>
+                              <span class="ipi-chip-arrow {_arrow_color_class(v_m)}">{_arrow_dir(v_m)}</span>
+                            </div>
+                            <div class="ipi-chip-val {_val_class(v_m)}">{mom_str}</div>
+                          </div>
+                          <div class="ipi-chip {_chip_class(v_i)}">
+                            <div class="ipi-chip-top">
+                              <span class="ipi-chip-label">YoY</span>
+                              <span class="ipi-chip-arrow {_arrow_color_class(v_i)}">{_arrow_dir(v_i)}</span>
+                            </div>
+                            <div class="ipi-chip-val {_val_class(v_i)}">{yoy_str}</div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1112,17 +1159,14 @@ def render_ipi(go_to):
                         else:
                             st.warning("No se encontró el código de la rama.")
 
-        # -------------------------
-        # MODAL
-        # -------------------------
+        # ── Modal (sin cambios) ─────────────────────────────────
         if st.session_state.get("ipi_modal_open"):
-            div_name = st.session_state.get("ipi_modal_div_name")
-            div_code = st.session_state.get("ipi_modal_div_code")
-            div_idx_c5 = st.session_state.get("ipi_modal_div_idx_c5")
+            div_name     = st.session_state.get("ipi_modal_div_name")
+            div_code     = st.session_state.get("ipi_modal_div_code")
+            div_idx_c5   = st.session_state.get("ipi_modal_div_idx_c5")
 
             @st.dialog(f"{div_name}")
             def _modal():
-                # Serie s.e. (Cuadro 5)
                 s_div_se_raw = procesar_serie_excel(df_c5, int(div_idx_c5))
                 s_div_se = _rebase_100(_clean_series(s_div_se_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
 
@@ -1131,10 +1175,8 @@ def render_ipi(go_to):
                     mdf = _compute_mom_df(s_div_se)
                     v_m_div = mdf["MoM"].dropna().iloc[-1] if mdf["MoM"].notna().any() else None
 
-                # Serie original (Cuadro 2) — buscar por código
                 header_idx = code_to_header_idx_c2.get(str(div_code).strip(), None)
                 if header_idx is None:
-                    # fallback por nombre exacto
                     candidates = [i2 for i2 in header_idxs_c2 if names_c2[i2].strip() == str(div_name).strip()]
                     if candidates:
                         header_idx = candidates[0]
@@ -1148,7 +1190,6 @@ def render_ipi(go_to):
                         ydf = _compute_yoy_df(s_div_o)
                         v_i_div = ydf["YoY"].dropna().iloc[-1] if ydf["YoY"].notna().any() else None
 
-                # KPIs mini
                 st.markdown(
                     textwrap.dedent(f"""
                     <div class="ipi-mini-wrap">
