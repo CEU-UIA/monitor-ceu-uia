@@ -410,7 +410,7 @@ def _inject_css_fx():
           .ipi-title {
             font-family: -apple-system, "Source Sans Pro", sans-serif;
             font-weight: 700;
-            font-size: 11px;
+            font-size: 13px;
             color: #1e3a5f;
             text-transform: uppercase;
             letter-spacing: .4px;
@@ -508,7 +508,7 @@ def _inject_css_fx():
           }
 
           /* ── Botón "Abrir detalle" integrado como pie de card ── */
-          div[data-testid="stVerticalBlock"] button[kind="secondary"] {
+          .ipi-card + div button[kind="secondary"] {
             background: #ffffff !important;
             border: 1px solid #dde6f0 !important;
             border-top: 1px solid #e8eff7 !important;
@@ -522,7 +522,7 @@ def _inject_css_fx():
             margin-top: -8px !important;
             transition: background .15s, color .15s !important;
           }
-          div[data-testid="stVerticalBlock"] button[kind="secondary"]:hover {
+          .ipi-card + div button[kind="secondary"]:hover {
             background: #eff4ff !important;
             color: #1d4ed8 !important;
           }
