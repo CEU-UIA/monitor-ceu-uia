@@ -379,7 +379,7 @@ def _inject_css_fx():
           .ipi-card-bar {
             height: 5px;
             width: 100%;
-            background: #1e3a8a;
+            background: #1a56db;
           }
 
           /* clase legacy mantenida pero sin efecto visual */
@@ -484,6 +484,26 @@ def _inject_css_fx():
             font-size: 28px;
             font-weight: 700;
             line-height: 1;
+          }
+
+          /* ── Botón "Abrir detalle" ── */
+          /* apunta a todos los botones dentro del bloque de cards */
+          div[data-testid="stVerticalBlock"] button[kind="secondary"] {
+            background: #f1f5f9 !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 10px !important;
+            color: #475569 !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            letter-spacing: .2px !important;
+            padding: 8px 0 !important;
+            box-shadow: none !important;
+            transition: background .15s, color .15s !important;
+          }
+          div[data-testid="stVerticalBlock"] button[kind="secondary"]:hover {
+            background: #e2e8f0 !important;
+            color: #1e3a5f !important;
+            border-color: #cbd5e1 !important;
           }
 
           /* legacy — ya no se usan en cards pero sí en modal antiguo si quedara */
@@ -1189,7 +1209,7 @@ def render_ipi(go_to):
 
                 with cols[j]:
                     st.markdown(card_html, unsafe_allow_html=True)
-                    if st.button("Abrir detalle", key=f"ipi_open_{idx}", use_container_width=True):
+                    if st.button("🔍 Abrir detalle", key=f"ipi_open_{idx}", use_container_width=True):
                         if div_code and div_code.lower() != "nan":
                             _open_modal(name, div_code, idx)
                             st.rerun()
