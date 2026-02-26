@@ -132,6 +132,24 @@ def _dot_class(x: float) -> str:
     return "ipi-up" if float(x) > 0 else "ipi-down"
 
 
+# ============================================================
+# Abreviaciones de nombres largos para las cards
+# ============================================================
+CARD_NAME_ABBREV = {
+    "Refinación del petróleo, coque y combustible nuclear": "Refinación del petróleo y combustible",
+    "Vehículos automotores, carrocerías, remolques y autopartes": "Vehículos automotores y autopartes",
+    "Otros equipos, aparatos e instrumentos": "Otros equipos y aparatos",
+    "Muebles y colchones, y otras industrias manufactureras": "Muebles y otras industrias manuf.",
+    "Madera, papel, edición e impresión": "Madera, papel e impresión",
+    "Sustancias y productos químicos": "Sustancias y prod. químicos",
+    "Productos minerales no metálicos": "Prod. minerales no metálicos",
+    "Prendas de vestir, cuero y calzado": "Prendas de vestir y calzado",
+}
+
+def _abbrev_name(name: str) -> str:
+    return CARD_NAME_ABBREV.get(name, name)
+
+
 # ---- helpers para las cards nuevas ----
 def _chip_class(x: float) -> str:
     if x is None or (isinstance(x, float) and np.isnan(x)):
@@ -379,11 +397,11 @@ def _inject_css_fx():
           .ipi-card-bar {
             height: 5px;
             width: 100%;
-            background: #1a56db;
+            background: #1e3a8a;
           }
 
           /* clase legacy mantenida pero sin efecto visual */
-          .bar-pos, .bar-neg, .bar-mix { background: #1a56db; }
+          .bar-pos, .bar-neg, .bar-mix { background: #1e3a8a; }
 
           .ipi-card-body {
             padding: 16px 16px 14px 16px;
@@ -392,12 +410,15 @@ def _inject_css_fx():
           .ipi-title {
             font-family: -apple-system, "Source Sans Pro", sans-serif;
             font-weight: 700;
-            font-size: 13px;
+            font-size: 11px;
             color: #1e3a5f;
             text-transform: uppercase;
             letter-spacing: .4px;
-            line-height: 1.4;
+            line-height: 1.35;
             margin-bottom: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
 
           /* chips MoM / YoY */
@@ -903,21 +924,79 @@ def render_ipi(go_to):
 
         if "ipi_sec_mode_key" not in st.session_state:
             st.session_state["ipi_sec_mode_key"] = "acum"
+        if "ipi_sec_rama_sel" not in st.session_state:
+            st.session_state["ipi_sec_rama_sel"] = "Total"
+
+        # Lista de ramas para el selector (Total + todas las divisiones)
+        ramas_opciones = ["Total"] + [names_c5[i] for i in divs_idxs]
 
         r1c1, r1c2 = st.columns(2, gap="large")
 
         with r1c1:
             st.markdown("<div class='fx-panel-title'>Tipo de comparación</div>", unsafe_allow_html=True)
+            rama_sel = st.session_state.get("ipi_sec_rama_sel", "Total")
+            # Si rama != Total, bloquear opción s.e.
+            available_modes = MODE_KEYS if rama_sel == "Total" else [k for k in MODE_KEYS if k != "se"]
+            # Si el modo guardado ya no está disponible, resetear
+            if st.session_state.get("ipi_sec_mode_key") not in available_modes:
+                st.session_state["ipi_sec_mode_key"] = available_modes[0]
             mode_key = st.selectbox(
                 "",
-                MODE_KEYS,
+                available_modes,
                 format_func=lambda k: MODE_LABELS.get(k, k),
                 key="ipi_sec_mode_key",
                 label_visibility="collapsed",
             )
 
         with r1c2:
-            st.markdown("&nbsp;", unsafe_allow_html=True)
+            st.markdown("<div class='fx-panel-title'>Seleccioná una rama</div>", unsafe_allow_html=True)
+            st.selectbox(
+                "",
+                ramas_opciones,
+                key="ipi_sec_rama_sel",
+                label_visibility="collapsed",
+            )
+            rama_sel = st.session_state.get("ipi_sec_rama_sel", "Total")
+
+        # ── Armar df_o_long y df_s_long filtrados según rama_sel ──
+        if rama_sel == "Total":
+            df_o_plot = df_o_long.copy()
+            df_s_plot = df_s_long.copy()
+        else:
+            # Buscar el header_idx de la rama seleccionada en Cuadro 2
+            rama_code = None
+            for i in divs_idxs:
+                if names_c5[i] == rama_sel:
+                    rama_code = str(codes_c5[i]).strip()
+                    break
+
+            rama_header_idx = code_to_header_idx_c2.get(rama_code, None) if rama_code else None
+
+            # Construir df_o_plot con: la rama total + sus subramas (Cuadro 2)
+            rows_rama = []
+            if rama_header_idx is not None:
+                # La rama total
+                s_rama_o_raw = procesar_serie_excel(df_c2, int(rama_header_idx))
+                s_rama_o = _rebase_100(_clean_series(s_rama_o_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
+                if s_rama_o is not None and not s_rama_o.empty:
+                    s_rama_o["Sector"] = rama_sel
+                    rows_rama.append(s_rama_o)
+
+                # Sus subramas
+                subcols = list(_subcol_range_for_header(rama_header_idx, header_idxs_c2, len(codes_c2)))
+                for k in subcols:
+                    nm = str(names_c2[k]).strip()
+                    if nm in ("", "Período", "IPI Manufacturero"):
+                        continue
+                    s_sub_raw = procesar_serie_excel(df_c2, k)
+                    s_sub = _rebase_100(_clean_series(s_sub_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
+                    if s_sub is None or s_sub.empty:
+                        continue
+                    s_sub["Sector"] = nm
+                    rows_rama.append(s_sub)
+
+            df_o_plot = pd.concat(rows_rama, ignore_index=True) if rows_rama else pd.DataFrame(columns=["Date", "Value", "Sector"])
+            df_s_plot = pd.DataFrame(columns=["Date", "Value", "Sector"])  # subramas no tienen s.e.
 
         colA, colB = st.columns(2, gap="large")
 
@@ -943,23 +1022,24 @@ def render_ipi(go_to):
             year_b = int(st.session_state.get("ipi_sec_year_b"))
 
             def _accum_avg_by_sector_orig(year: int) -> pd.Series:
-                t = df_o_long[df_o_long["Date"].dt.year == year].copy()
+                t = df_o_plot[df_o_plot["Date"].dt.year == year].copy()
                 t = t[t["Date"].dt.month <= last_month_num]
                 return t.groupby("Sector")["Value"].mean()
 
             A = _accum_avg_by_sector_orig(year_a)
             B = _accum_avg_by_sector_orig(year_b)
 
-            subtitle = f"Comparación acumulada ene–{last_month_label} (promedio) · A={year_a} / B={year_b}"
+            rama_label = f" — {rama_sel}" if rama_sel != "Total" else ""
+            subtitle = f"Comparación acumulada ene–{last_month_label} (promedio) · A={year_a} / B={year_b}{rama_label}"
 
         elif mode_key == "anual":
             month_num = last_month_num
 
             possible_dates = []
-            if not df_o_long.empty:
+            if not df_o_plot.empty:
                 for y in years_all:
                     dt = pd.Timestamp(year=y, month=month_num, day=1)
-                    if (df_o_long["Date"] == dt).any():
+                    if (df_o_plot["Date"] == dt).any():
                         possible_dates.append(dt)
             possible_dates = sorted(possible_dates, reverse=True)
 
@@ -996,20 +1076,21 @@ def render_ipi(go_to):
             dt_b = pd.to_datetime(st.session_state.get("ipi_sec_month_b"))
 
             def _month_level_by_sector_orig(dt: pd.Timestamp) -> pd.Series:
-                t = df_o_long[df_o_long["Date"] == dt].copy()
+                t = df_o_plot[df_o_plot["Date"] == dt].copy()
                 return t.groupby("Sector")["Value"].mean()
 
             A = _month_level_by_sector_orig(dt_a)
             B = _month_level_by_sector_orig(dt_b)
 
-            subtitle = f"Comparación anual ({MESES_ES[month_num-1]}) · A={_month_opt_label(dt_a)} / B={_month_opt_label(dt_b)}"
+            rama_label = f" — {rama_sel}" if rama_sel != "Total" else ""
+            subtitle = f"Comparación anual ({MESES_ES[month_num-1]}) · A={_month_opt_label(dt_a)} / B={_month_opt_label(dt_b)}{rama_label}"
 
         else:
-            if df_s_long.empty:
+            if df_s_plot.empty:
                 st.warning("No hay datos sin estacionalidad disponibles para esta comparación.")
                 return
 
-            possible_dates = sorted(df_s_long["Date"].dropna().unique().tolist(), reverse=True)
+            possible_dates = sorted(df_s_plot["Date"].dropna().unique().tolist(), reverse=True)
             possible_dates = [pd.to_datetime(d) for d in possible_dates]
 
             if "ipi_sec_se_month_a" not in st.session_state:
@@ -1048,7 +1129,7 @@ def render_ipi(go_to):
             dt_b = pd.to_datetime(st.session_state.get("ipi_sec_se_month_b"))
 
             def _month_level_by_sector_se(dt: pd.Timestamp) -> pd.Series:
-                t = df_s_long[df_s_long["Date"] == dt].copy()
+                t = df_s_plot[df_s_plot["Date"] == dt].copy()
                 return t.groupby("Sector")["Value"].mean()
 
             A = _month_level_by_sector_se(dt_a)
@@ -1076,10 +1157,12 @@ def render_ipi(go_to):
         x_right = max(0.0, x_max) + pad
 
         y_plain = common["Sector"].tolist()
-        y = [
-            "<b>IPI - Nivel general</b>" if s == "IPI - Nivel general" else s
-            for s in y_plain
-        ]
+        y = []
+        for s in y_plain:
+            if s == "IPI - Nivel general" or (rama_sel != "Total" and s == rama_sel):
+                y.append(f"<b>{s}</b>")
+            else:
+                y.append(s)
 
         colors = np.where(x >= 0, "rgba(34,197,94,0.55)", "rgba(239,68,68,0.55)")
 
@@ -1138,8 +1221,24 @@ def render_ipi(go_to):
         # Cards por rama — NUEVO FORMATO
         # =========================================================
         st.markdown("<div class='fx-panel-gap'></div>", unsafe_allow_html=True)
-        st.markdown("<div class='fx-panel-title'>Detalle por rama</div>", unsafe_allow_html=True)
-        st.caption("Hacé click en una rama para ver variaciones, subsectores y la serie (s.e.).")
+
+        # Header "Detalle por rama" con mismo formato fx-wrap
+        st.markdown(
+            textwrap.dedent("""
+                <div class="fx-wrap" style="margin-bottom:12px;">
+                  <div class="fx-title-row">
+                    <div class="fx-icon-badge">🏭</div>
+                    <div>
+                      <div class="fx-title">Detalle por rama</div>
+                      <div style="font-size:12px; color:#526484; margin-top:2px;">
+                        Hacé click en una rama para ver variaciones, subsectores y la serie (s.e.)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+            """),
+            unsafe_allow_html=True,
+        )
 
         if "ipi_modal_open" not in st.session_state:
             st.session_state["ipi_modal_open"] = False
@@ -1186,7 +1285,7 @@ def render_ipi(go_to):
                     <div class="ipi-card">
                       <div class="ipi-card-bar {_bar_class(v_m, v_i)}"></div>
                       <div class="ipi-card-body">
-                        <div class="ipi-title">{name}</div>
+                        <div class="ipi-title">{_abbrev_name(name)}</div>
                         <div class="ipi-metrics">
                           <div class="ipi-chip {_chip_class(v_m)}">
                             <div class="ipi-chip-top">
