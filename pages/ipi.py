@@ -379,7 +379,7 @@ def _inject_css_fx():
           .ipi-card-bar {
             height: 5px;
             width: 100%;
-            background: #1a56db;
+            background: #1e3a8a;
           }
 
           /* clase legacy mantenida pero sin efecto visual */
