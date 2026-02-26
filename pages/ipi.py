@@ -572,7 +572,7 @@ def render_ipi(go_to):
 
         # default: últimos 5 años si existe
         try:
-            default_start = (pd.Timestamp(max_real) - pd.DateOffset(years=5)).date()
+            default_start = (pd.Timestamp(max_real) - pd.DateOffset(years=4)).date()
         except Exception:
             default_start = months_d[0]
 
@@ -636,7 +636,7 @@ def render_ipi(go_to):
                         y=t["Acc"],
                         mode="lines+markers",
                         name=f"{vname} (acum s.e.)",
-                        hovertemplate="%{x|%b %Y}<br>%{fullData.name}: %{y:.1f}%<extra></extra>",
+                        hovertemplate="%{y:.1f}%<extra></extra>",
                     )
                 )
             fig.add_hline(y=0, line_width=1, line_dash="solid", line_color="#666666")
