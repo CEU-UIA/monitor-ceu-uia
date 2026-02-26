@@ -311,8 +311,10 @@ def _inject_css_fx():
             margin: 0 0 6px 2px;
             letter-spacing: 0.01em;
           }
-
-          .fx-panel-gap{ height: 16px; }
+            .fx-panel-gap{ height: 16px; }
+            .fx-gap-large { height: 40px; }
+            .fx-gap-medium { height: 26px; }
+          
 
           .fx-panel-wrap{
             background: rgba(230, 243, 255, 0.55);
