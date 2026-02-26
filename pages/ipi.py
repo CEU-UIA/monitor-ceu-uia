@@ -121,6 +121,18 @@ def _build_div_blocks(codes: List[str]) -> Tuple[List[int], Dict[str, int]]:
             code_to_idx[str(c).strip()] = i
     return header_idxs, code_to_idx
 
+def _subcol_range_for_header(header_idx: int, header_idxs: list[int], total_cols: int) -> range:
+    if header_idx not in header_idxs:
+        return range(0, 0)
+    pos = header_idxs.index(header_idx)
+    next_h = header_idxs[pos + 1] if pos + 1 < len(header_idxs) else total_cols
+    return range(header_idx + 1, next_h)
+
+
+def _dot_class(x: float) -> str:
+    if x is None or pd.isna(x) or abs(float(x)) < 1e-12:
+        return "ipi-neutral"
+    return "ipi-up" if float(x) > 0 else "ipi-down"
 
 # ============================================================
 # CSS (COPIA del formato TASA / EMAE — NO MODIFICAR)
@@ -327,6 +339,47 @@ def _inject_css_fx():
             .fx-row{ grid-template-columns: 1fr; row-gap: 10px; }
             .fx-meta{ white-space: normal; }
             .fx-pills{ justify-content: flex-start; }
+          }
+
+          /* =========================
+             IPI – Cards + Modal (bloque extra)
+             ========================= */
+          .ipi-card{
+            background:#ffffff;
+            border:1px solid #e1e8ed;
+            border-radius:14px;
+            padding:14px 14px 12px 14px;
+            box-shadow:0 4px 6px rgba(0,0,0,0.05);
+          }
+          .ipi-title{ font-weight:900; font-size:18px; color:#0f2a43; margin-bottom:8px; }
+          .ipi-row{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+          .ipi-label{ font-size:16px; font-weight:700; color:#526484; }
+          .ipi-badge{
+            width:52px; height:52px; border-radius:999px;
+            display:flex; align-items:center; justify-content:center;
+            font-weight:900; font-size:18px;
+            border:1px solid transparent;
+          }
+          .ipi-up{ background:rgba(22,163,74,.12); color:rgb(22,163,74); border-color:rgba(22,163,74,.25); }
+          .ipi-down{ background:rgba(220,38,38,.12); color:rgb(220,38,38); border-color:rgba(220,38,38,.25); }
+          .ipi-neutral{ background:rgba(100,116,139,.12); color:rgb(100,116,139); border-color:rgba(100,116,139,.22); }
+
+          .ipi-mini-wrap{ display:flex; gap:12px; margin-bottom:6px; }
+          .ipi-mini{
+            flex:1;
+            border:1px solid #e6edf5;
+            border-radius:12px;
+            padding:10px 12px;
+            background:#ffffff;
+            text-align:center;
+          }
+          .ipi-mini-lbl{ font-size:16px; font-weight:800; color:#526484; margin-bottom:6px; }
+          .ipi-mini-row{ display:flex; justify-content:center; }
+          .ipi-dot{
+            width:52px; height:52px; border-radius:999px;
+            display:flex; align-items:center; justify-content:center;
+            font-weight:900; font-size:18px;
+            border:1px solid transparent;
           }
         </style>
         """
@@ -981,3 +1034,236 @@ def render_ipi(go_to):
             "</div>",
             unsafe_allow_html=True,
         )
+
+        # =========================================================
+        # EXTRA — Cards por rama + modal (tabla + gráfico)
+        # (debajo del bloque 2, adentro del panel celeste)
+        # =========================================================
+
+        st.markdown("<div class='fx-panel-gap'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='fx-panel-title'>Detalle por rama</div>", unsafe_allow_html=True)
+        st.caption("Hacé click en una rama para ver variaciones, subsectores y la serie (s.e.).")
+
+        # -------------------------
+        # Session state del modal
+        # -------------------------
+        if "ipi_modal_open" not in st.session_state:
+            st.session_state["ipi_modal_open"] = False
+            st.session_state["ipi_modal_div_name"] = None
+            st.session_state["ipi_modal_div_code"] = None
+            st.session_state["ipi_modal_div_idx_c5"] = None
+
+        def _open_modal(div_name: str, div_code: str, div_idx_c5: int):
+            st.session_state["ipi_modal_open"] = True
+            st.session_state["ipi_modal_div_name"] = div_name
+            st.session_state["ipi_modal_div_code"] = div_code
+            st.session_state["ipi_modal_div_idx_c5"] = div_idx_c5
+
+        # -------------------------
+        # Cards (3 columnas)
+        # -------------------------
+        for start in range(0, len(divs_idxs), 3):
+            cols = st.columns(3, vertical_alignment="top")
+
+            for j, idx in enumerate(divs_idxs[start:start + 3]):
+                name = names_c5[idx]
+                div_code = str(codes_c5[idx]).strip()
+
+                # Mensual (s.e.) desde Cuadro 5 (rebased ya en SERIES, pero acá usamos extracción directa)
+                s_se_raw = procesar_serie_excel(df_c5, idx)
+                s_se = _rebase_100(_clean_series(s_se_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
+                v_m = None
+                if s_se is not None and not s_se.empty:
+                    s_tmp = _compute_mom_df(s_se)
+                    v_m = s_tmp["MoM"].dropna().iloc[-1] if s_tmp["MoM"].notna().any() else None
+
+                # Interanual (original) desde Cuadro 2 (header idx)
+                v_i = None
+                header_idx = code_to_header_idx_c2.get(div_code, None)
+                if header_idx is not None:
+                    s_o_raw = procesar_serie_excel(df_c2, int(header_idx))
+                    s_o = _rebase_100(_clean_series(s_o_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
+                    if s_o is not None and not s_o.empty:
+                        s_y = _compute_yoy_df(s_o)
+                        v_i = s_y["YoY"].dropna().iloc[-1] if s_y["YoY"].notna().any() else None
+
+                card_html = textwrap.dedent(f"""
+                    <div class="ipi-card">
+                      <div class="ipi-title">{name}</div>
+                      <div class="ipi-row">
+                        <div style="display:flex; gap:10px; align-items:center;">
+                          <div class="ipi-badge {_dot_class(v_m)}">{_fmt_pct_es(v_m, 1)}%</div>
+                          <div><div class="ipi-label">Mensual (s.e)</div></div>
+                        </div>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                          <div class="ipi-badge {_dot_class(v_i)}">{_fmt_pct_es(v_i, 1)}%</div>
+                          <div><div class="ipi-label">Interanual</div></div>
+                        </div>
+                      </div>
+                    </div>
+                """)
+
+                with cols[j]:
+                    st.markdown(card_html, unsafe_allow_html=True)
+                    if st.button("Abrir detalle", key=f"ipi_open_{idx}", use_container_width=True):
+                        if div_code and div_code.lower() != "nan":
+                            _open_modal(name, div_code, idx)
+                            st.rerun()
+                        else:
+                            st.warning("No se encontró el código de la rama.")
+
+        # -------------------------
+        # MODAL
+        # -------------------------
+        if st.session_state.get("ipi_modal_open"):
+            div_name = st.session_state.get("ipi_modal_div_name")
+            div_code = st.session_state.get("ipi_modal_div_code")
+            div_idx_c5 = st.session_state.get("ipi_modal_div_idx_c5")
+
+            @st.dialog(f"{div_name}")
+            def _modal():
+                # Serie s.e. (Cuadro 5)
+                s_div_se_raw = procesar_serie_excel(df_c5, int(div_idx_c5))
+                s_div_se = _rebase_100(_clean_series(s_div_se_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
+
+                v_m_div = None
+                if s_div_se is not None and not s_div_se.empty:
+                    mdf = _compute_mom_df(s_div_se)
+                    v_m_div = mdf["MoM"].dropna().iloc[-1] if mdf["MoM"].notna().any() else None
+
+                # Serie original (Cuadro 2) — buscar por código
+                header_idx = code_to_header_idx_c2.get(str(div_code).strip(), None)
+                if header_idx is None:
+                    # fallback por nombre exacto
+                    candidates = [i2 for i2 in header_idxs_c2 if names_c2[i2].strip() == str(div_name).strip()]
+                    if candidates:
+                        header_idx = candidates[0]
+
+                v_i_div = None
+                s_div_o = pd.DataFrame(columns=["Date", "Value"])
+                if header_idx is not None:
+                    s_div_o_raw = procesar_serie_excel(df_c2, int(header_idx))
+                    s_div_o = _rebase_100(_clean_series(s_div_o_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
+                    if s_div_o is not None and not s_div_o.empty:
+                        ydf = _compute_yoy_df(s_div_o)
+                        v_i_div = ydf["YoY"].dropna().iloc[-1] if ydf["YoY"].notna().any() else None
+
+                # KPIs mini
+                st.markdown(
+                    textwrap.dedent(f"""
+                    <div class="ipi-mini-wrap">
+                      <div class="ipi-mini">
+                        <div class="ipi-mini-lbl">Mensual (s.e)</div>
+                        <div class="ipi-mini-row">
+                          <div class="ipi-dot {_dot_class(v_m_div)}">{_fmt_pct_es(v_m_div, 1)}%</div>
+                        </div>
+                      </div>
+                      <div class="ipi-mini">
+                        <div class="ipi-mini-lbl">Interanual</div>
+                        <div class="ipi-mini-row">
+                          <div class="ipi-dot {_dot_class(v_i_div)}">{_fmt_pct_es(v_i_div, 1)}%</div>
+                        </div>
+                      </div>
+                    </div>
+                    """),
+                    unsafe_allow_html=True,
+                )
+
+                st.caption("Nota: **(s.e)** = sin estacionalidad. Base: **100=abr-23**.")
+
+                tab1, tab2 = st.tabs(["🔎 Subsectores", "📈 Gráfico"])
+
+                with tab1:
+                    st.caption("Variación interanual (%). Fuente: INDEC — IPI Manufacturero (Excel)")
+                    if header_idx is None:
+                        st.warning("No se pudo ubicar la rama en el Cuadro 2.")
+                    else:
+                        subcols = list(_subcol_range_for_header(header_idx, header_idxs_c2, len(codes_c2)))
+                        rows = []
+                        for k in subcols:
+                            nm = str(names_c2[k]).strip()
+                            if nm in ("", "Período", "IPI Manufacturero"):
+                                continue
+                            s_sub_raw = procesar_serie_excel(df_c2, k)
+                            s_sub = _rebase_100(_clean_series(s_sub_raw.rename(columns={"fecha": "Date", "valor": "Value"})), BASE_DT)
+                            if s_sub is None or s_sub.empty:
+                                continue
+                            yoy = _compute_yoy_df(s_sub)["YoY"].dropna()
+                            if yoy.empty:
+                                continue
+                            rows.append({"Subsector": nm, "Interanual (%)": float(yoy.iloc[-1])})
+
+                        if not rows:
+                            st.info("No hay desglose adicional disponible.")
+                        else:
+                            df_sub = pd.DataFrame(rows)
+                            df_sub["Interanual (%)"] = pd.to_numeric(df_sub["Interanual (%)"], errors="coerce")
+                            df_sub = df_sub.sort_values("Interanual (%)", ascending=False).reset_index(drop=True)
+                            df_sub["Interanual"] = df_sub["Interanual (%)"].apply(lambda x: f"{_fmt_pct_es(x,1)}%")
+
+                            st.dataframe(
+                                df_sub[["Subsector", "Interanual"]],
+                                use_container_width=True,
+                                height=520,
+                                hide_index=True,
+                                column_config={
+                                    "Subsector": st.column_config.TextColumn("Subsector"),
+                                    "Interanual": st.column_config.TextColumn("Interanual", help="Variación interanual (%)"),
+                                },
+                            )
+
+                with tab2:
+                    st.caption("Serie (s.e). Fuente: INDEC — IPI Manufacturero (Excel)")
+                    if s_div_se is None or s_div_se.empty:
+                        st.warning("No se pudo extraer la serie (s.e).")
+                    else:
+                        show_total = st.checkbox("Mostrar también el Total IPI (s.e)", value=True)
+
+                        min_date = s_div_se["Date"].min().date()
+                        max_date = s_div_se["Date"].max().date()
+
+                        try:
+                            default_start = (pd.Timestamp(max_date) - pd.DateOffset(years=5)).date()
+                            if default_start < min_date:
+                                default_start = min_date
+                        except Exception:
+                            default_start = min_date
+
+                        d1, d2 = st.slider(
+                            "Rango de fechas",
+                            min_value=min_date,
+                            max_value=max_date,
+                            value=(default_start, max_date),
+                        )
+
+                        s_div_plot = s_div_se[(s_div_se["Date"].dt.date >= d1) & (s_div_se["Date"].dt.date <= d2)]
+
+                        figm = go.Figure()
+
+                        if show_total:
+                            tot = df_ng_se[(df_ng_se["Date"].dt.date >= d1) & (df_ng_se["Date"].dt.date <= d2)]
+                            if not tot.empty:
+                                figm.add_trace(go.Scatter(
+                                    x=tot["Date"], y=tot["Value"],
+                                    mode="lines", name="Total (s.e)", line=dict(width=2)
+                                ))
+
+                        figm.add_trace(go.Scatter(
+                            x=s_div_plot["Date"], y=s_div_plot["Value"],
+                            mode="lines", name=f"{div_name} (s.e)", line=dict(width=3)
+                        ))
+
+                        figm.update_layout(
+                            template="plotly_white",
+                            height=420,
+                            margin=dict(l=10, r=10, t=10, b=10),
+                            hovermode="x unified",
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                        )
+                        st.plotly_chart(figm, use_container_width=True)
+
+                if st.button("Cerrar", use_container_width=True):
+                    st.session_state["ipi_modal_open"] = False
+                    st.rerun()
+
+            _modal()
