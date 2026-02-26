@@ -1242,7 +1242,7 @@ def render_ipi(go_to):
             unsafe_allow_html=True,
         )
 
-        st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
 
         if "ipi_modal_open" not in st.session_state:
             st.session_state["ipi_modal_open"] = False
