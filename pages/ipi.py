@@ -447,7 +447,7 @@ def _inject_css_fx():
 
           .ipi-chip-label {
             font-family: -apple-system, "Source Sans Pro", sans-serif;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: .5px;
@@ -1239,6 +1239,7 @@ def render_ipi(go_to):
             """),
             unsafe_allow_html=True,
         )
+        st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
 
         if "ipi_modal_open" not in st.session_state:
             st.session_state["ipi_modal_open"] = False
