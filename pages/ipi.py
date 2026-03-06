@@ -1290,14 +1290,14 @@ def render_ipi(go_to):
                         <div class="ipi-metrics">
                           <div class="ipi-chip {_chip_class(v_m)}">
                             <div class="ipi-chip-top">
-                              <span class="ipi-chip-label">MoM</span>
+                              <span class="ipi-chip-label">Mensual</span>
                               <span class="ipi-chip-arrow {_arrow_color_class(v_m)}">{_arrow_dir(v_m)}</span>
                             </div>
                             <div class="ipi-chip-val {_val_class(v_m)}">{mom_str}</div>
                           </div>
                           <div class="ipi-chip {_chip_class(v_i)}">
                             <div class="ipi-chip-top">
-                              <span class="ipi-chip-label">YoY</span>
+                              <span class="ipi-chip-label">Interanual</span>
                               <span class="ipi-chip-arrow {_arrow_color_class(v_i)}">{_arrow_dir(v_i)}</span>
                             </div>
                             <div class="ipi-chip-val {_val_class(v_i)}">{yoy_str}</div>
