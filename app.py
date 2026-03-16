@@ -24,6 +24,7 @@ from pages.empleo import render_empleo
 from pages.ipi import render_ipi
 from pages.macro_pbi_emae import render_macro_pbi_emae
 from pages.comex import render_comex
+from pages.morosidad import render_morosidad
 
 # ----------------------------
 # Warnings (limpia consola)
@@ -147,6 +148,11 @@ elif sec == "comex":
     if st.button("← Volver a secciones"):
         go_to("home")
     render_comex(go_to)
+    
+elif sec == "morosidad":
+    if st.button("← Volver a secciones"):
+    go_to("home")
+render_morosidad(go_to)
 
 else:
     st.warning("Sección desconocida. Volviendo al inicio.")
