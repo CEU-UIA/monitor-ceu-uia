@@ -71,141 +71,59 @@ def fmt_pct(x, dec=1):
 
 
 # ============================================================
-# CSS — refinado, mismo sistema que el resto del monitor
+# CSS
 # ============================================================
 CSS = """
 <style>
-  /* ── Panel celestito ── */
   .fx-panel-wrap {
     background: rgba(230,243,255,0.55);
     border: 1px solid rgba(15,55,100,0.10);
     border-radius: 22px;
-    padding: 20px 20px 28px 20px;
+    padding: 12px 16px 20px 16px;
     box-shadow: 0 10px 18px rgba(15,55,100,0.06);
-    margin-top: 8px;
+    margin-top: 4px;
   }
-
-  /* ── Header hero ── */
   .mora-hero {
-    background: linear-gradient(135deg, #0d1f4e 0%, #1B2D6B 55%, #1e3a8a 100%);
-    border-radius: 20px;
-    padding: 24px 28px;
-    margin-bottom: 20px;
-    box-shadow: 0 16px 40px rgba(13,31,78,0.30);
+    border: 1.5px solid rgba(15,55,100,0.18);
+    border-radius: 18px;
+    padding: 18px 22px;
+    margin-bottom: 14px;
     display: flex;
     align-items: center;
-    gap: 28px;
-    position: relative;
-    overflow: hidden;
+    gap: 22px;
   }
-  .mora-hero::before {
-    content: "";
-    position: absolute;
-    top: -40px; right: -40px;
-    width: 200px; height: 200px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.04);
-  }
-  .mora-hero::after {
-    content: "";
-    position: absolute;
-    bottom: -60px; right: 80px;
-    width: 150px; height: 150px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.03);
-  }
-  .mora-hero-icon {
-    font-size: 44px;
-    flex-shrink: 0;
-    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
-  }
+  .mora-hero-icon { font-size: 32px; flex-shrink: 0; }
   .mora-hero-label {
-    font-size: 10px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    color: rgba(147,197,253,0.85);
-    margin-bottom: 8px;
+    font-size: 10px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.12em; color: #6b7a99; margin-bottom: 4px;
   }
   .mora-hero-value {
-    font-size: 52px;
-    font-weight: 950;
-    color: #ffffff;
-    letter-spacing: -0.03em;
-    line-height: 1;
-    margin-bottom: 6px;
+    font-size: 42px; font-weight: 950; color: #1B2D6B;
+    letter-spacing: -0.03em; line-height: 1; margin-bottom: 3px;
   }
-  .mora-hero-sub {
-    font-size: 12px;
-    color: rgba(186,220,254,0.65);
-    font-weight: 500;
-    letter-spacing: 0.01em;
-  }
-  .mora-hero-divider {
-    width: 1px;
-    height: 56px;
-    background: rgba(255,255,255,0.15);
-    flex-shrink: 0;
-  }
-  .mora-hero-stat {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
+  .mora-hero-sub { font-size: 11px; color: #8a95a8; font-weight: 500; }
+  .mora-hero-divider { width: 1px; height: 48px; background: rgba(15,55,100,0.12); flex-shrink: 0; }
+  .mora-hero-stat { display: flex; flex-direction: column; gap: 3px; }
   .mora-hero-stat-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    color: rgba(147,197,253,0.75);
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.10em; color: #6b7a99;
   }
-  .mora-hero-stat-value {
-    font-size: 22px;
-    font-weight: 800;
-    color: #93c5fd;
-    letter-spacing: -0.01em;
-  }
-
-  /* ── Selector labels ── */
+  .mora-hero-stat-value { font-size: 20px; font-weight: 800; color: #c0392b; }
   .sel-label {
-    font-size: 11px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    color: rgba(20,50,79,0.65);
-    margin-bottom: 6px;
-    margin-left: 2px;
+    font-size: 11px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.10em; color: rgba(20,50,79,0.65);
+    margin-bottom: 4px; margin-left: 2px;
   }
-
-  /* ── Selectbox oscuro dentro del panel ── */
   .fx-panel-wrap div[data-testid="stSelectbox"] div[role="combobox"] {
-    background: #0f2347 !important;
-    border: 1px solid rgba(99,163,255,0.25) !important;
-    border-radius: 12px !important;
-    box-shadow: 0 4px 12px rgba(15,35,71,0.20) !important;
+    background: #0b2a55 !important;
+    border: 1px solid rgba(99,163,255,0.20) !important;
+    border-radius: 10px !important;
   }
   .fx-panel-wrap div[data-testid="stSelectbox"] div[role="combobox"] * {
-    color: #7ec8ff !important;
-    fill: #7ec8ff !important;
-    font-weight: 700 !important;
-    font-size: 14px !important;
+    color: #8fc2ff !important; fill: #8fc2ff !important; font-weight: 700 !important;
   }
-
-  /* ── Separador entre selectores y gráfico ── */
-  .sel-divider {
-    height: 1px;
-    background: linear-gradient(90deg, rgba(15,55,100,0.12) 0%, transparent 100%);
-    margin: 16px 0 20px 0;
-    border-radius: 1px;
-  }
-
-  /* ── Caption fuente ── */
-  .mora-caption {
-    font-size: 11px;
-    color: rgba(20,50,79,0.45);
-    margin-top: 8px;
-    letter-spacing: 0.02em;
-  }
+  .sel-divider { height: 1px; background: rgba(15,55,100,0.10); margin: 10px 0 14px 0; }
+  .mora-caption { font-size: 11px; color: rgba(20,50,79,0.40); margin-top: 8px; }
 </style>
 """
 
