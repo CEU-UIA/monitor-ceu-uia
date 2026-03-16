@@ -151,8 +151,8 @@ elif sec == "comex":
     
 elif sec == "morosidad":
     if st.button("← Volver a secciones"):
-    go_to("home")
-render_morosidad(go_to)
+        go_to("home")
+    render_morosidad(go_to)
 
 else:
     st.warning("Sección desconocida. Volviendo al inicio.")
