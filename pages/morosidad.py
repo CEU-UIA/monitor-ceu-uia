@@ -7,7 +7,8 @@ import streamlit.components.v1 as components
 # ============================================================
 # Config
 # ============================================================
-MORA_PATH       = "assets/mora_por_actividad.xlsx"
+MORA_PATH       = "assets/mora_por_actividad2.xlsx"
+COL_FECHA       = "fecha"
 COL_SECTOR      = "Sector_1_dígito"
 COL_ID          = "id"
 COL_NOMBRE      = "Nombre"
@@ -18,6 +19,9 @@ ID_IND_MIN      = 101
 ID_IND_MAX      = 332
 LABEL_IND       = "Industria manufacturera"
 LABEL_IND_TOTAL = f"▶ Total {LABEL_IND}"
+
+# columna interna usada en Tab 3 para el eje Y (siempre float limpio)
+COL_Y_SERIE = "valor_serie"
 
 
 # ============================================================
@@ -45,15 +49,22 @@ def load_mora():
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df[COL_SECTOR] = df[COL_SECTOR].astype(str).str.strip()
     df = df[~df[COL_SECTOR].str.lower().isin(["nan", "none", ""])].copy()
+    df[COL_FECHA] = pd.to_numeric(df[COL_FECHA], errors="coerce")
 
-    # Separar filas industriales (id 101–332) del resto
-    df_ext = df[(df[COL_ID] < ID_IND_MIN) | (df[COL_ID] > ID_IND_MAX)].copy()
-    df_ind = df[(df[COL_ID] >= ID_IND_MIN) & (df[COL_ID] <= ID_IND_MAX)].copy()
-    return df_ext, df_ind
+    # Último mes → Tab 1 y Tab 2
+    ultimo_mes = df[COL_FECHA].max()
+    df_last = df[df[COL_FECHA] == ultimo_mes].copy()
+    df_ext  = df_last[(df_last[COL_ID] < ID_IND_MIN) | (df_last[COL_ID] > ID_IND_MAX)].copy()
+    df_ind  = df_last[(df_last[COL_ID] >= ID_IND_MIN) & (df_last[COL_ID] <= ID_IND_MAX)].copy()
+
+    # Histórico completo → Tab 3
+    df_hist = df.copy()
+
+    return df_ext, df_ind, df_hist
 
 
 # ============================================================
-# Helpers
+# Helpers generales
 # ============================================================
 def _agrupar(df_in, col_grupo):
     g = df_in.groupby(col_grupo, as_index=False).agg(
@@ -83,13 +94,26 @@ def fmt_pct(x, dec=1):
     except Exception:
         return "—"
 
+
 def fmt_millones(x):
     try:
-        v = float(x)
-        v = int(round(v))  # sin decimales
+        v = int(round(float(x)))
         return f"{v:,}".replace(",", ".") + " M"
     except Exception:
         return "—"
+
+
+def _fecha_label(f):
+    """202401 → ene-24"""
+    meses = ["ene","feb","mar","abr","may","jun",
+             "jul","ago","sep","oct","nov","dic"]
+    try:
+        f = int(f)
+        anio = str(f // 100)[2:]
+        mes  = meses[(f % 100) - 1]
+        return f"{mes}-{anio}"
+    except Exception:
+        return str(f)
 
 
 # ============================================================
@@ -160,7 +184,7 @@ CSS = """
 
 
 # ============================================================
-# Panel celestito (JS inject)
+# Panel celestito
 # ============================================================
 def _inject_panel(marker_id):
     st.markdown(f"<span id='{marker_id}'></span>", unsafe_allow_html=True)
@@ -186,7 +210,7 @@ def _inject_panel(marker_id):
 
 
 # ============================================================
-# Gráfico barras horizontales
+# Gráfico barras horizontales (Tab 1 y Tab 2 — sin cambios)
 # ============================================================
 def _fig_barras(nombres, valores, sufijo, titulo, bold_label=None):
     pares = [
@@ -248,6 +272,99 @@ def _fig_barras(nombres, valores, sufijo, titulo, bold_label=None):
 
 
 # ============================================================
+# Helpers Tab 3
+# ============================================================
+def _build_series(df_hist, fechas_ord, usar_mm, grupos):
+    """
+    grupos: lista de (nombre_serie, df_subset)
+    Devuelve DataFrame con columnas:
+      fecha_ord | fecha_label | nombre_serie | COL_Y_SERIE
+    COL_Y_SERIE es siempre float listo para graficar:
+      - tasa de mora en % si not usar_mm
+      - saldo irregular en millones si usar_mm
+    """
+    rows = []
+    for nombre, df_sub in grupos:
+        for f in fechas_ord:
+            df_f = df_sub[df_sub[COL_FECHA] == f]
+            s    = df_f[COL_SALDO].sum()
+            irr  = df_f[COL_IRREG].sum()
+            if usar_mm:
+                val = irr / 1_000
+            else:
+                val = (irr / s * 100) if s > 0 else np.nan
+            rows.append({
+                "fecha_ord":    f,
+                "fecha_label":  _fecha_label(f),
+                "nombre_serie": nombre,
+                COL_Y_SERIE:    val,
+            })
+    return pd.DataFrame(rows)
+
+
+def _fig_lineas(df_series, sufijo, titulo):
+    if df_series.empty:
+        return go.Figure()
+
+    colores_linea = [
+        "#1B2D6B", "#c0392b", "#2980b9", "#27ae60", "#8e44ad",
+        "#e67e22", "#16a085", "#d35400", "#2c3e50", "#7f8c8d",
+    ]
+
+    fig    = go.Figure()
+    series = df_series["nombre_serie"].unique()
+
+    for idx, serie in enumerate(series):
+        df_s   = df_series[df_series["nombre_serie"] == serie].sort_values("fecha_ord")
+        color  = colores_linea[idx % len(colores_linea)]
+        es_tot = serie.startswith("Total ")
+
+        hover_fmt = "%{y:.1f}%" if sufijo == "%" else "%{y:,.0f} M"
+
+        fig.add_trace(go.Scatter(
+            x=df_s["fecha_label"],
+            y=df_s[COL_Y_SERIE],
+            mode="lines+markers",
+            name=serie,
+            line=dict(color=color, width=3 if es_tot else 1.8,
+                      dash="solid" if es_tot else "dot"),
+            marker=dict(size=6 if es_tot else 4, color=color),
+            hovertemplate=f"<b>{serie}</b><br>%{{x}}<br>{hover_fmt}<extra></extra>",
+        ))
+
+    tick_suf = "%" if sufijo == "%" else ""
+
+    fig.update_layout(
+        title=dict(text=titulo, font=dict(size=13, color="#14324f"), x=0.01),
+        margin=dict(t=40, b=40, l=60, r=20),
+        xaxis=dict(
+            tickfont=dict(size=11, color="#334155"),
+            showgrid=False, showline=True,
+            linecolor="rgba(15,55,100,0.15)",
+        ),
+        yaxis=dict(
+            tickfont=dict(size=11, color="#334155"),
+            ticksuffix=tick_suf,
+            showgrid=True,
+            gridcolor="rgba(15,55,100,0.08)",
+            zeroline=False,
+        ),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=460,
+        legend=dict(
+            font=dict(size=11, color="#334155"),
+            bgcolor="rgba(255,255,255,0.8)",
+            bordercolor="rgba(15,55,100,0.10)",
+            borderwidth=1,
+        ),
+        hovermode="x unified",
+        dragmode=False,
+    )
+    return fig
+
+
+# ============================================================
 # RENDER PRINCIPAL
 # ============================================================
 def render_morosidad(go_to):
@@ -255,12 +372,12 @@ def render_morosidad(go_to):
     st.markdown(CSS, unsafe_allow_html=True)
 
     try:
-        df_ext, df_ind = load_mora()
+        df_ext, df_ind, df_hist = load_mora()
     except Exception as e:
         st.error(f"⚠️ No se pudo cargar `{MORA_PATH}`\n\n`{e}`")
         return
 
-    # ── Agregados globales ────────────────────────────────────
+    # ── Agregados globales (último mes) ──────────────────────
     df_todo     = pd.concat([df_ext, df_ind], ignore_index=True)
     total_saldo = df_todo[COL_SALDO].sum()
     total_irreg = df_todo[COL_IRREG].sum()
@@ -268,11 +385,9 @@ def render_morosidad(go_to):
 
     df_g_ext     = _agrupar(df_ext, COL_SECTOR)
     ind_total    = _total_row(df_ind, LABEL_IND)
-    df_g_ind_sub = _agrupar(df_ind, COL_SECTOR)   # Alimentos, Textil, etc.
+    df_g_ind_sub = _agrupar(df_ind, COL_SECTOR)
     mora_ind     = ind_total[COL_MORA]
-
-    # df_g1: sectores externos + una fila Industria manufacturera
-    df_g1 = pd.concat([df_g_ext, pd.DataFrame([ind_total])], ignore_index=True)
+    df_g1        = pd.concat([df_g_ext, pd.DataFrame([ind_total])], ignore_index=True)
 
     # ── HERO ─────────────────────────────────────────────────
     st.markdown(
@@ -293,33 +408,30 @@ def render_morosidad(go_to):
         unsafe_allow_html=True,
     )
 
-    # ── PANEL CELESTITO — tabs adentro ───────────────────────
+    # ── PANEL ────────────────────────────────────────────────
     with st.container():
         _inject_panel("mora_panel")
 
-        tab_sectores, tab_lupa = st.tabs(["📊 Morosidad por sectores", "🔍 Lupa en Industria"])
+        tab_sectores, tab_lupa, tab_hist = st.tabs([
+            "📊 Morosidad por sectores",
+            "🔍 Lupa en Industria",
+            "📈 Evolución histórica",
+        ])
 
         # ══════════════════════════════════════════════════════
-        # TAB 1 — MOROSIDAD POR SECTORES
+        # TAB 1 — sin cambios
         # ══════════════════════════════════════════════════════
         with tab_sectores:
-
             opciones_t1 = ["Total sectores"] + sorted(df_g1[COL_SECTOR].tolist())
-
             c1, c2 = st.columns(2, gap="large")
             with c1:
                 st.markdown("<div class='sel-label'>Seleccioná el sector</div>", unsafe_allow_html=True)
-                sector_t1 = st.selectbox(
-                    "", opciones_t1, index=0,
-                    key="t1_sector", label_visibility="collapsed",
-                )
+                sector_t1 = st.selectbox("", opciones_t1, index=0,
+                                         key="t1_sector", label_visibility="collapsed")
             with c2:
                 st.markdown("<div class='sel-label'>Seleccioná la medida</div>", unsafe_allow_html=True)
-                medida_t1 = st.selectbox(
-                    "", ["Tasa de irregularidad", "Saldo irregular (en millones de pesos)"],
-                    key="t1_medida", label_visibility="collapsed",
-                )
-
+                medida_t1 = st.selectbox("", ["Tasa de irregularidad", "Saldo irregular (en millones de pesos)"],
+                                         key="t1_medida", label_visibility="collapsed")
             st.markdown("<div class='sel-divider'></div>", unsafe_allow_html=True)
 
             usar_mm = medida_t1 == "Saldo irregular (en millones de pesos)"
@@ -330,67 +442,45 @@ def render_morosidad(go_to):
                 valores = (df_g1[COL_IRREG] / 1_000).tolist() if usar_mm else df_g1[COL_MORA].tolist()
                 bold    = LABEL_IND
                 titulo  = f"{'Saldo irregular (M$)' if usar_mm else 'Tasa de irregularidad (%)'} — todos los sectores"
-
             elif sector_t1 == LABEL_IND:
                 tot_val = (ind_total[COL_IRREG] / 1_000) if usar_mm else ind_total[COL_MORA]
                 nombres = [f"Total {LABEL_IND}"] + df_g_ind_sub[COL_SECTOR].tolist()
-                valores = (
-                    [tot_val] + (df_g_ind_sub[COL_IRREG] / 1_000).tolist()
-                    if usar_mm else
-                    [tot_val] + df_g_ind_sub[COL_MORA].tolist()
-                )
-                bold   = f"Total {LABEL_IND}"
-                titulo = f"{'Saldo irregular (M$)' if usar_mm else 'Tasa de irregularidad (%)'} — {sector_t1}"
-
+                valores = ([tot_val] + (df_g_ind_sub[COL_IRREG] / 1_000).tolist() if usar_mm
+                           else [tot_val] + df_g_ind_sub[COL_MORA].tolist())
+                bold    = f"Total {LABEL_IND}"
+                titulo  = f"{'Saldo irregular (M$)' if usar_mm else 'Tasa de irregularidad (%)'} — {sector_t1}"
             else:
                 df_sub   = df_ext[df_ext[COL_SECTOR] == sector_t1].copy()
                 df_sub_g = _agrupar(df_sub, COL_NOMBRE)
                 tot      = _total_row(df_sub, f"Total {sector_t1}")
                 tot_val  = (tot[COL_IRREG] / 1_000) if usar_mm else tot[COL_MORA]
                 nombres  = [f"Total {sector_t1}"] + df_sub_g[COL_NOMBRE].tolist()
-                valores  = (
-                    [tot_val] + (df_sub_g[COL_IRREG] / 1_000).tolist()
-                    if usar_mm else
-                    [tot_val] + df_sub_g[COL_MORA].tolist()
-                )
-                bold   = f"Total {sector_t1}"
-                titulo = f"{'Saldo irregular (M$)' if usar_mm else 'Tasa de irregularidad (%)'} — {sector_t1}"
+                valores  = ([tot_val] + (df_sub_g[COL_IRREG] / 1_000).tolist() if usar_mm
+                            else [tot_val] + df_sub_g[COL_MORA].tolist())
+                bold     = f"Total {sector_t1}"
+                titulo   = f"{'Saldo irregular (M$)' if usar_mm else 'Tasa de irregularidad (%)'} — {sector_t1}"
 
             with st.container(border=True):
-                st.plotly_chart(
-                    _fig_barras(nombres, valores, suf, titulo, bold_label=bold),
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                    key="t1_chart",
-                )
-
-            st.markdown(
-                "<div class='mora-caption'>Fuente: BCRA — Central de deudores del sistema financiero</div>",
-                unsafe_allow_html=True,
-            )
+                st.plotly_chart(_fig_barras(nombres, valores, suf, titulo, bold_label=bold),
+                                use_container_width=True, config={"displayModeBar": False}, key="t1_chart")
+            st.markdown("<div class='mora-caption'>Fuente: BCRA — Central de deudores del sistema financiero</div>",
+                        unsafe_allow_html=True)
 
         # ══════════════════════════════════════════════════════
-        # TAB 2 — LUPA EN INDUSTRIA
+        # TAB 2 — sin cambios
         # ══════════════════════════════════════════════════════
         with tab_lupa:
-
             subsectores_ind = sorted(df_g_ind_sub[COL_SECTOR].tolist())
             opciones_t2     = [LABEL_IND_TOTAL] + subsectores_ind
-
             c1, c2 = st.columns(2, gap="large")
             with c1:
                 st.markdown("<div class='sel-label'>Seleccioná el sector industrial</div>", unsafe_allow_html=True)
-                subsector_t2 = st.selectbox(
-                    "", opciones_t2, index=0,
-                    key="t2_subsector", label_visibility="collapsed",
-                )
+                subsector_t2 = st.selectbox("", opciones_t2, index=0,
+                                            key="t2_subsector", label_visibility="collapsed")
             with c2:
                 st.markdown("<div class='sel-label'>Seleccioná la medida</div>", unsafe_allow_html=True)
-                medida_t2 = st.selectbox(
-                    "", ["Tasa de irregularidad", "Saldo irregular (en millones de pesos)"],
-                    key="t2_medida", label_visibility="collapsed",
-                )
-
+                medida_t2 = st.selectbox("", ["Tasa de irregularidad", "Saldo irregular (en millones de pesos)"],
+                                         key="t2_medida", label_visibility="collapsed")
             st.markdown("<div class='sel-divider'></div>", unsafe_allow_html=True)
 
             usar_mm2 = medida_t2 == "Saldo irregular (en millones de pesos)"
@@ -399,34 +489,120 @@ def render_morosidad(go_to):
             if subsector_t2 == LABEL_IND_TOTAL:
                 tot_val2 = (ind_total[COL_IRREG] / 1_000) if usar_mm2 else ind_total[COL_MORA]
                 nombres2 = [f"Total {LABEL_IND}"] + df_g_ind_sub[COL_SECTOR].tolist()
-                valores2 = (
-                    [tot_val2] + (df_g_ind_sub[COL_IRREG] / 1_000).tolist()
-                    if usar_mm2 else
-                    [tot_val2] + df_g_ind_sub[COL_MORA].tolist()
-                )
-                bold2   = f"Total {LABEL_IND}"
-                titulo2 = f"{'Saldo irregular (M$)' if usar_mm2 else 'Tasa de irregularidad (%)'} — {LABEL_IND}"
-
+                valores2 = ([tot_val2] + (df_g_ind_sub[COL_IRREG] / 1_000).tolist() if usar_mm2
+                            else [tot_val2] + df_g_ind_sub[COL_MORA].tolist())
+                bold2    = f"Total {LABEL_IND}"
+                titulo2  = f"{'Saldo irregular (M$)' if usar_mm2 else 'Tasa de irregularidad (%)'} — {LABEL_IND}"
             else:
                 df_sub2  = df_ind[df_ind[COL_SECTOR] == subsector_t2].copy()
                 df_sub2g = _agrupar(df_sub2, COL_NOMBRE)
                 tot2     = _total_row(df_sub2, f"Total {subsector_t2}")
                 tot2_val = (tot2[COL_IRREG] / 1_000) if usar_mm2 else tot2[COL_MORA]
                 nombres2 = [f"Total {subsector_t2}"] + df_sub2g[COL_NOMBRE].tolist()
-                valores2 = (
-                    [tot2_val] + (df_sub2g[COL_IRREG] / 1_000).tolist()
-                    if usar_mm2 else
-                    [tot2_val] + df_sub2g[COL_MORA].tolist()
-                )
-                bold2   = f"Total {subsector_t2}"
-                titulo2 = f"{'Saldo irregular (M$)' if usar_mm2 else 'Tasa de irregularidad (%)'} — {subsector_t2}"
+                valores2 = ([tot2_val] + (df_sub2g[COL_IRREG] / 1_000).tolist() if usar_mm2
+                            else [tot2_val] + df_sub2g[COL_MORA].tolist())
+                bold2    = f"Total {subsector_t2}"
+                titulo2  = f"{'Saldo irregular (M$)' if usar_mm2 else 'Tasa de irregularidad (%)'} — {subsector_t2}"
+
+            with st.container(border=True):
+                st.plotly_chart(_fig_barras(nombres2, valores2, suf2, titulo2, bold_label=bold2),
+                                use_container_width=True, config={"displayModeBar": False}, key="t2_chart")
+            st.markdown("<div class='mora-caption'>Fuente: BCRA — Central de deudores del sistema financiero</div>",
+                        unsafe_allow_html=True)
+
+        # ══════════════════════════════════════════════════════
+        # TAB 3 — EVOLUCIÓN HISTÓRICA
+        # ══════════════════════════════════════════════════════
+        with tab_hist:
+
+            fechas_ord  = sorted(df_hist[COL_FECHA].dropna().unique())
+            df_hist_ext = df_hist[(df_hist[COL_ID] < ID_IND_MIN) | (df_hist[COL_ID] > ID_IND_MAX)].copy()
+            df_hist_ind = df_hist[(df_hist[COL_ID] >= ID_IND_MIN) & (df_hist[COL_ID] <= ID_IND_MAX)].copy()
+
+            sectores_hist = sorted(df_hist_ext[COL_SECTOR].dropna().unique().tolist())
+            opciones_t3   = ["Total sistema"] + sectores_hist + [LABEL_IND]
+
+            # Fila 1 de selectores
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
+                st.markdown("<div class='sel-label'>Seleccioná el sector</div>", unsafe_allow_html=True)
+                sector_t3 = st.selectbox("", opciones_t3, index=0,
+                                         key="t3_sector", label_visibility="collapsed")
+            with c2:
+                st.markdown("<div class='sel-label'>Seleccioná la medida</div>", unsafe_allow_html=True)
+                medida_t3 = st.selectbox("", ["Tasa de irregularidad", "Saldo irregular (en millones de pesos)"],
+                                         key="t3_medida", label_visibility="collapsed")
+
+            usar_mm3 = medida_t3 == "Saldo irregular (en millones de pesos)"
+            suf3     = "M" if usar_mm3 else "%"
+
+            # Selector condicional de subsector
+            subsector_t3 = None
+            subind_t3    = None
+
+            if sector_t3 != "Total sistema":
+                st.markdown("<div class='sel-divider'></div>", unsafe_allow_html=True)
+                c3, _ = st.columns([1, 1], gap="large")
+
+                if sector_t3 == LABEL_IND:
+                    subsectores_ind_hist = sorted(df_hist_ind[COL_SECTOR].dropna().unique().tolist())
+                    with c3:
+                        st.markdown("<div class='sel-label'>Seleccioná el subsector industrial</div>",
+                                    unsafe_allow_html=True)
+                        subind_t3 = st.selectbox(
+                            "", [f"▶ Total {LABEL_IND}"] + subsectores_ind_hist,
+                            index=0, key="t3_subind", label_visibility="collapsed",
+                        )
+                else:
+                    df_sector_hist      = df_hist_ext[df_hist_ext[COL_SECTOR] == sector_t3]
+                    subsectores_nombres = sorted(df_sector_hist[COL_NOMBRE].dropna().unique().tolist())
+                    with c3:
+                        st.markdown("<div class='sel-label'>Seleccioná el subsector</div>",
+                                    unsafe_allow_html=True)
+                        subsector_t3 = st.selectbox(
+                            "", [f"▶ Total {sector_t3}"] + subsectores_nombres,
+                            index=0, key="t3_subsector", label_visibility="collapsed",
+                        )
+
+            st.markdown("<div class='sel-divider'></div>", unsafe_allow_html=True)
+
+            # Construir grupos
+            grupos3 = []
+
+            if sector_t3 == "Total sistema":
+                grupos3 = [("Total sistema", df_hist)]
+
+            elif sector_t3 == LABEL_IND:
+                if subind_t3 is None or subind_t3 == f"▶ Total {LABEL_IND}":
+                    grupos3 = [(f"Total {LABEL_IND}", df_hist_ind)]
+                else:
+                    grupos3 = [
+                        (f"Total {LABEL_IND}", df_hist_ind),
+                        (subind_t3, df_hist_ind[df_hist_ind[COL_SECTOR] == subind_t3]),
+                    ]
+
+            else:
+                df_sector_hist = df_hist_ext[df_hist_ext[COL_SECTOR] == sector_t3]
+                if subsector_t3 is None or subsector_t3 == f"▶ Total {sector_t3}":
+                    grupos3 = [(f"Total {sector_t3}", df_sector_hist)]
+                else:
+                    grupos3 = [
+                        (f"Total {sector_t3}", df_sector_hist),
+                        (subsector_t3, df_sector_hist[df_sector_hist[COL_NOMBRE] == subsector_t3]),
+                    ]
+
+            df_series3 = _build_series(df_hist, fechas_ord, usar_mm3, grupos3)
+            titulo3    = (
+                f"{'Saldo irregular (M$)' if usar_mm3 else 'Tasa de irregularidad (%)'}"
+                f" — {sector_t3}"
+            )
 
             with st.container(border=True):
                 st.plotly_chart(
-                    _fig_barras(nombres2, valores2, suf2, titulo2, bold_label=bold2),
+                    _fig_lineas(df_series3, suf3, titulo3),
                     use_container_width=True,
                     config={"displayModeBar": False},
-                    key="t2_chart",
+                    key="t3_chart",
                 )
 
             st.markdown(
