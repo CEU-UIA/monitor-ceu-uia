@@ -267,7 +267,7 @@ def render_macro_fx(go_to):
     # -------------------------
     # CCL proxy (FAST) desde services — igual que Home
     # -------------------------
-    ccl_df = get_ccl_ypf_df_fast(period="2y", prefer_adj=False)
+    ccl_df = get_ccl_ypf_df_fast(period="5y", prefer_adj=True)
 
     ccl = ccl_df.rename(columns={"value": "CCL"}).copy()
     ccl["Date"] = _fix_date(ccl["Date"])
