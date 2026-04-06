@@ -1053,11 +1053,12 @@ def render_macro_fx(go_to):
 
     st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
-    min_d = df_ok["Date"].min().date()
     max_d = df_ok["Date"].max().date()
-    default_start = (pd.to_datetime(df_ok["Date"].max()) - pd.Timedelta(days=365)).date()
-    if default_start < min_d:
-        default_start = min_d
+    min_d_real = df_ok["Date"].min().date()
+    
+    # mostrar solo 1 año hacia atrás
+    min_d = max(min_d_real, (pd.to_datetime(df_ok["Date"].max()) - pd.Timedelta(days=365)).date())
+    default_start = min_d
 
     st.markdown("<div class='fx-panel-title'>Rango de fechas</div>", unsafe_allow_html=True)
     start_b, end_b = st.slider(
