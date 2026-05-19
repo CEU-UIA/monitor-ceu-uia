@@ -893,22 +893,40 @@ def render_macro_tasa(go_to):
     
     st.divider()
     
-    st.subheader("TEST — Calidad de cartera")
-    
     cartera = get_calidad_cartera_long()
     
-    st.write("Shape:", cartera.shape)
+    if "cart_agente" not in st.session_state:
+        st.session_state["cart_agente"]="Total"
     
-    st.dataframe(
-        cartera.tail(30),
-        use_container_width=True,
-    )
+    if "cart_concepto" not in st.session_state:
+        st.session_state["cart_concepto"]="Cartera irregular total"
     
-    st.write("Agentes/conceptos disponibles:")
+    c1,c2=st.columns(2)
     
-    st.dataframe(
-        cartera.groupby("agente")["concepto"]
-        .unique()
-        .reset_index(),
-        use_container_width=True,
-    )
+    with c1:
+        agente=st.selectbox(
+            "Seleccioná el agente económico",
+            ["Total","Familias","Empresas"],
+            key="cart_agente"
+        )
+    
+    conceptos_dict = {
+        "Total":[...],
+        "Familias":[...],
+        "Empresas":[...]
+    }
+    
+    with c2:
+        concepto=st.selectbox(
+            "Seleccioná el concepto",
+            conceptos_dict[agente],
+            key="cart_concepto"
+        )
+    
+    plot_df=cartera[
+        (cartera["agente"]==agente)
+        &
+        (cartera["concepto"]==concepto)
+    ]
+    
+    st.dataframe(plot_df.tail())
