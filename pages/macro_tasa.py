@@ -887,46 +887,114 @@ def render_macro_tasa(go_to):
             unsafe_allow_html=True,
         )
 
+
     # ============================================================
     # TEST — Calidad de cartera BCRA
     # ============================================================
-    
+
     st.divider()
-    
+
+    st.subheader("TEST — Calidad de cartera")
+
     cartera = get_calidad_cartera_long()
-    
+
+    if cartera.empty:
+        st.warning("Sin datos")
+        return
+
+    # ----------------------------------------
+    # Session state
+    # ----------------------------------------
+
     if "cart_agente" not in st.session_state:
-        st.session_state["cart_agente"]="Total"
-    
+        st.session_state["cart_agente"] = "Total"
+
     if "cart_concepto" not in st.session_state:
-        st.session_state["cart_concepto"]="Cartera irregular total"
-    
-    c1,c2=st.columns(2)
-    
+        st.session_state["cart_concepto"] = "Cartera irregular total"
+
+    # ----------------------------------------
+    # Selectores
+    # ----------------------------------------
+
+    c1, c2 = st.columns(2)
+
     with c1:
-        agente=st.selectbox(
+
+        agente = st.selectbox(
             "Seleccioná el agente económico",
-            ["Total","Familias","Empresas"],
+            ["Total", "Familias", "Empresas"],
             key="cart_agente"
         )
-    
+
     conceptos_dict = {
-        "Total":[...],
-        "Familias":[...],
-        "Empresas":[...]
+
+        "Total": [
+            "Cartera irregular total",
+            "Adelantos",
+            "Documentos",
+            "Con garantía hipotecaria",
+            "Con garantía prendaria",
+            "Personales",
+            "Tarjetas de crédito",
+            "Prefinanciación y financiación de exportaciones",
+            "Otros"
+        ],
+
+        "Familias": [
+            "Cartera irregular total",
+            "Personales",
+            "Con garantía hipotecaria",
+            "Con garantía prendaria",
+            "Tarjetas de crédito",
+            "Otros"
+        ],
+
+        "Empresas": [
+            "Cartera irregular total",
+            "Adelantos",
+            "Documentos",
+            "Con garantía hipotecaria",
+            "Con garantía prendaria",
+            "Prefinanciación y financiación de exportaciones",
+            "Otros"
+        ]
+
     }
-    
+
+    # ----------------------------------------
+    # Limpia concepto inválido
+    # ----------------------------------------
+
+    if (
+        st.session_state.get("cart_concepto")
+        not in conceptos_dict[agente]
+    ):
+
+        st.session_state["cart_concepto"] = (
+            conceptos_dict[agente][0]
+        )
+
     with c2:
-        concepto=st.selectbox(
+
+        concepto = st.selectbox(
             "Seleccioná el concepto",
             conceptos_dict[agente],
             key="cart_concepto"
         )
-    
-    plot_df=cartera[
-        (cartera["agente"]==agente)
+
+    # ----------------------------------------
+    # Filtro
+    # ----------------------------------------
+
+    plot_df = cartera[
+        (cartera["agente"] == agente)
         &
-        (cartera["concepto"]==concepto)
+        (cartera["concepto"] == str(concepto))
     ]
-    
-    st.dataframe(plot_df.tail())
+
+    st.write("Shape filtrado:", plot_df.shape)
+
+    st.dataframe(
+        plot_df.tail(20),
+        use_container_width=True
+    )
