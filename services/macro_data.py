@@ -820,3 +820,70 @@ def get_emae_sectores_long() -> pd.DataFrame:
         .reset_index(drop=True)
     )
     return long_df
+
+# ============================================================
+# BCRA — Calidad de cartera por líneas
+# Informe sobre Bancos / Anexo XLSX
+# ============================================================
+@st.cache_data(ttl=12 * 60 * 60)
+def get_calidad_cartera_long() -> pd.DataFrame:
+    url = (
+        "https://www.bcra.gob.ar/archivos/Pdfs/"
+        "PublicacionesEstadisticas/informes/InfBanc_Anexo.xlsx"
+    )
+
+    try:
+        r = requests.get(url, timeout=60, verify=False)
+        r.raise_for_status()
+
+        raw = pd.read_excel(
+            BytesIO(r.content),
+            sheet_name="Calidad de Cartera (por líneas)",
+            header=None,
+            engine="openpyxl",
+        )
+
+        fechas = raw.iloc[5, 1:]
+
+        bloques = {
+            "Total": (6, 15),
+            "Familias": (58, 64),
+            "Empresas": (102, 109),
+        }
+
+        dfs = []
+
+        for agente, (i, j) in bloques.items():
+            conceptos = raw.iloc[i:j, 0]
+            valores = raw.iloc[i:j, 1:].copy()
+
+            valores.columns = fechas.values
+            valores.index = conceptos.values
+
+            tmp = (
+                valores
+                .reset_index(names="concepto")
+                .melt(
+                    id_vars="concepto",
+                    var_name="Date",
+                    value_name="value",
+                )
+            )
+
+            tmp["Date"] = pd.to_datetime(tmp["Date"], errors="coerce")
+            tmp["value"] = pd.to_numeric(tmp["value"], errors="coerce").round(1)
+            tmp["agente"] = agente
+
+            dfs.append(tmp)
+
+        return (
+            pd.concat(dfs, ignore_index=True)
+            [["Date", "agente", "concepto", "value"]]
+            .dropna(subset=["Date", "agente", "concepto", "value"])
+            .sort_values(["agente", "concepto", "Date"])
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+        st.warning(f"BCRA Calidad de cartera error: {e}")
+        return pd.DataFrame(columns=["Date", "agente", "concepto", "value"])
