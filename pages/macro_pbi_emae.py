@@ -71,8 +71,7 @@ def render_macro_pbi_emae(go_to):
     # =========================
     # Volver (afuera del panel)
     # =========================
-    if st.button("← Volver"):
-        go_to("macro_home")
+
 
     # =========================
     # CSS (COPIA del formato TASA)
