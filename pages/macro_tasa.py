@@ -1026,7 +1026,7 @@ def render_macro_tasa(go_to):
             '<div class="fx-wrap">',
             '  <div class="fx-title-row">',
             '    <div class="fx-icon-badge">🏦</div>',
-            '    <div class="fx-title">Calidad de cartera</div>',
+            '    <div class="fx-title">Tasa de Morosidad</div>',
             "  </div>",
             '  <div class="fx-card">',
             '    <div class="fx-row">',
