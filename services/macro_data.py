@@ -467,6 +467,94 @@ def get_emae_deseasonalizado() -> pd.DataFrame:
 
 
 # ============================================================
+# INDEC — EMAE mensual base 2004 (Excel)
+# ============================================================
+
+EMAE_XLS_URL = "https://www.indec.gob.ar/ftp/cuadros/economia/sh_emae_mensual_base2004.xls"
+
+@st.cache_data(ttl=12 * 60 * 60)
+def get_emae_excel_full() -> pd.DataFrame:
+    """
+    Devuelve:
+    Date, Original, SA, Trend, MoM, YoY
+    """
+    try:
+        r = requests.get(EMAE_XLS_URL, timeout=60)
+        r.raise_for_status()
+
+        raw = pd.read_excel(
+            BytesIO(r.content),
+            header=None,
+            engine="xlrd"
+        )
+
+        meses = {
+            "enero":1, "febrero":2, "marzo":3, "abril":4,
+            "mayo":5, "junio":6, "julio":7, "agosto":8,
+            "septiembre":9, "setiembre":9,
+            "octubre":10, "noviembre":11, "diciembre":12
+        }
+
+        df = raw.iloc[5:, [0, 1, 2, 4, 6]].copy()
+        df.columns = ["Year", "Month", "Original", "SA", "Trend"]
+
+        df["Year"] = pd.to_numeric(df["Year"], errors="coerce").ffill()
+        df["MonthNum"] = (
+            df["Month"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .map(meses)
+        )
+
+        for c in ["Original", "SA", "Trend"]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+        df = df.dropna(subset=["Year", "MonthNum"])
+        df["Date"] = pd.to_datetime(
+            dict(
+                year=df["Year"].astype(int),
+                month=df["MonthNum"].astype(int),
+                day=1,
+            ),
+            errors="coerce",
+        )
+
+        df = (
+            df[["Date", "Original", "SA", "Trend"]]
+            .dropna(subset=["Date"])
+            .sort_values("Date")
+            .reset_index(drop=True)
+        )
+
+        df["MoM"] = (df["SA"] / df["SA"].shift(1) - 1.0) * 100.0
+        df["YoY"] = (df["Original"] / df["Original"].shift(12) - 1.0) * 100.0
+
+        return df
+
+    except Exception as e:
+        st.warning(f"INDEC EMAE Excel error: {e}")
+        return pd.DataFrame(columns=["Date", "Original", "SA", "Trend", "MoM", "YoY"])
+
+
+@st.cache_data(ttl=12 * 60 * 60)
+def get_emae_original() -> pd.DataFrame:
+    df = get_emae_excel_full()
+    if df.empty:
+        return pd.DataFrame(columns=["Date", "Value"])
+    return df[["Date", "Original"]].rename(columns={"Original": "Value"}).dropna().reset_index(drop=True)
+
+
+@st.cache_data(ttl=12 * 60 * 60)
+def get_emae_deseasonalizado() -> pd.DataFrame:
+    df = get_emae_excel_full()
+    if df.empty:
+        return pd.DataFrame(columns=["Date", "Value"])
+    return df[["Date", "SA"]].rename(columns={"SA": "Value"}).dropna().reset_index(drop=True)
+
+
+
+# ============================================================
 # DATOS.GOB.AR — ISAC (INDEC)
 # ============================================================
 
