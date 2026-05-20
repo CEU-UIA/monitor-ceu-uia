@@ -523,12 +523,20 @@ def render_macro_pbi_emae(go_to):
         start_default = max(DEFAULT_START, months_d[0])
         end_default = months_d[-1]
 
+
+        MESES_ES = {
+            1:"ene",2:"feb",3:"mar",4:"abr",
+            5:"may",6:"jun",7:"jul",8:"ago",
+            9:"sep",10:"oct",11:"nov",12:"dic"
+        }
+        
         st.markdown("<div class='fx-panel-title'>Rango de fechas</div>", unsafe_allow_html=True)
+        
         start_d, end_d = st.select_slider(
             "",
             options=months_d,
             value=(start_default, end_default),
-            format_func=lambda d: pd.Timestamp(d).strftime("%b-%y"),
+            format_func=lambda d: f"{MESES_ES[pd.Timestamp(d).month]}-{str(pd.Timestamp(d).year)[2:]}",
             label_visibility="collapsed",
             key="act_range",
         )
@@ -596,8 +604,16 @@ def render_macro_pbi_emae(go_to):
 
         # Aire a la derecha
         x_max = pd.Timestamp(end_ts) + pd.Timedelta(days=10)
-        fig.update_xaxes(range=[pd.Timestamp(start_ts), x_max])
 
+        fig.update_xaxes(
+            range=[pd.Timestamp(start_ts), x_max],
+            tickformat="%b-%y",
+            hoverformat="%b %Y"
+        )
+        
+        fig.update_layout(locale="es")
+               
+        
         st.plotly_chart(
             fig,
             use_container_width=True,
