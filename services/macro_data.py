@@ -685,13 +685,24 @@ def get_ipi_minero_excel_long() -> pd.DataFrame:
         # fila 9 -> índice 8 (0-based)
         df = raw.iloc[8:, :].copy()
 
-        # A,B,D,H -> 0,1,3,7
-        df = df.iloc[:, [0, 1, 3, 7]]
+        # Columnas reales del Excel INDEC:
+        # año = 1, mes = 2, original = 3, desestacionalizada = 7
+        df = df.iloc[:, [1, 2, 3, 7]]
         df.columns = ["Year", "Month", "Orig", "SA"]
+        
+        # limpia años tipo "2025*"
+        df["Year"] = (
+            df["Year"]
+            .astype(str)
+            .str.extract(r"(\d{4})")[0]
+        )
+        
+        # forward fill
+        df["Year"] = (
+            pd.to_numeric(df["Year"], errors="coerce")
+            .ffill()
+        )
 
-        # forward-fill del año (bloques)
-        df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
-        df["Year"] = df["Year"].ffill()
 
         # mes ES -> num
         df["MonthNum"] = df["Month"].apply(_month_es_to_num)
