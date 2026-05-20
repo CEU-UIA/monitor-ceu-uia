@@ -303,12 +303,19 @@ def render_macro_pbi_emae(go_to):
     # =========================
     # Defaults (state) - antes de widgets
     # =========================
+    OPCIONES_EMAE = [
+        "Nivel original",
+        "Nivel desestacionalizado",
+        "Tendencia-ciclo",
+        "Variación mensual (s.e.)",
+        "Variación anual",
+    ]
+    
     if "act_medida" not in st.session_state:
-        st.session_state["act_medida"] = "Variación mensual"
-
-    # si venía de la versión anterior con otro valor, lo normalizamos
-    if st.session_state.get("act_medida") not in ["Variación mensual", "Variación anual", "Serie original"]:
-        st.session_state["act_medida"] = "Variación mensual"
+        st.session_state["act_medida"] = "Nivel desestacionalizado"
+    
+    if st.session_state.get("act_medida") not in OPCIONES_EMAE:
+        st.session_state["act_medida"] = "Nivel desestacionalizado"
 
     # =========================================================
     # Panel grande: TODO adentro de un container (como TASA)
@@ -387,29 +394,20 @@ def render_macro_pbi_emae(go_to):
         # =========================
         # Controles
         # =========================
-        if "act_niveles" not in st.session_state:
-            st.session_state["act_niveles"] = ["EMAE desestacionalizado", "EMAE tendencia-ciclo"]
-        
         c1, c2 = st.columns(2, gap="large")
         
         with c1:
-            st.markdown("<div class='fx-panel-title'>Seleccioná las series de nivel</div>", unsafe_allow_html=True)
-            st.multiselect(
+            st.markdown("<div class='fx-panel-title'>Seleccioná la serie</div>", unsafe_allow_html=True)
+            st.selectbox(
                 "",
-                options=["EMAE desestacionalizado", "EMAE tendencia-ciclo", "EMAE original"],
-                key="act_niveles",
+                OPCIONES_EMAE,
+                key="act_medida",
                 label_visibility="collapsed",
             )
         
         with c2:
-            st.markdown("<div class='fx-panel-title'>Seleccioná la variación</div>", unsafe_allow_html=True)
-            st.selectbox(
-                "",
-                ["Variación mensual", "Variación anual", "Ninguna"],
-                key="act_medida",
-                label_visibility="collapsed",
-            )
-
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            
         # =========================
         # Rango de fechas
         # =========================
@@ -474,104 +472,107 @@ def render_macro_pbi_emae(go_to):
         # =========================
         # Plot principal
         # =========================
-        medida = st.session_state.get("act_medida", "Variación mensual")
 
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-        # Línea base: desestacionalizada
-        fig.add_trace(
-            go.Scatter(
-                x=dfp["FechaLabel"],
-                y=dfp["SA"],
-                mode="lines+markers",
-                name="EMAE desestacionalizado",
-                customdata=[_num_es(v, 1) for v in dfp["SA"]],
-                hovertemplate="%{fullData.name}: %{customdata}<extra></extra>",
-            ),
-            secondary_y=False,
-        )
-
-        niveles_sel = st.session_state.get("act_niveles", [])
+        medida = st.session_state.get("act_medida", "Nivel desestacionalizado")
         
-        if not niveles_sel:
-            st.warning("Seleccioná al menos una serie de nivel.")
-            return
+        fig = go.Figure()
         
-        # Series de nivel seleccionables
-        if "EMAE desestacionalizado" in niveles_sel:
+        if medida == "Nivel original":
+            y_col = "Original"
+            nombre = "EMAE original"
+            y_title = "Índice base 2004=100"
+            custom = [_num_es(v, 1) for v in dfp[y_col]]
+            hover = "%{fullData.name}: %{customdata}<extra></extra>"
+        
             fig.add_trace(
                 go.Scatter(
                     x=dfp["FechaLabel"],
-                    y=dfp["SA"],
+                    y=dfp[y_col],
                     mode="lines+markers",
-                    name="EMAE desestacionalizado",
-                    customdata=[_num_es(v, 1) for v in dfp["SA"]],
-                    hovertemplate="%{fullData.name}: %{customdata}<extra></extra>",
-                ),
-                secondary_y=False,
-            )
-        
-        if "EMAE tendencia-ciclo" in niveles_sel:
-            fig.add_trace(
-                go.Scatter(
-                    x=dfp["FechaLabel"],
-                    y=dfp["Trend"],
-                    mode="lines",
-                    name="EMAE tendencia-ciclo",
-                    customdata=[_num_es(v, 1) for v in dfp["Trend"]],
-                    hovertemplate="%{fullData.name}: %{customdata}<extra></extra>",
-                    line=dict(width=3),
-                ),
-                secondary_y=False,
-            )
-        
-        if "EMAE original" in niveles_sel:
-            fig.add_trace(
-                go.Scatter(
-                    x=dfp["FechaLabel"],
-                    y=dfp["Original"],
-                    mode="lines+markers",
-                    name="EMAE original",
-                    customdata=[_num_es(v, 1) for v in dfp["Original"]],
-                    hovertemplate="%{fullData.name}: %{customdata}<extra></extra>",
-                ),
-                secondary_y=False,
-            )
-        
-        # Serie adicional en eje derecho
-        y2 = pd.Series(dtype=float)
-        
-        if medida == "Variación mensual":
-            bar = dfp.dropna(subset=["MoM"]).copy()
-            if not bar.empty:
-                fig.add_trace(
-                    go.Bar(
-                        x=bar["FechaLabel"],
-                        y=bar["MoM"],
-                        name="Variación mensual",
-                        customdata=[_pct_es(v, 1) for v in bar["MoM"]],
-                        hovertemplate="%{fullData.name}: %{customdata}<extra></extra>",
-                        opacity=0.28,
-                    ),
-                    secondary_y=True,
+                    name=nombre,
+                    customdata=custom,
+                    hovertemplate=hover,
                 )
-                y2 = bar["MoM"]
+            )
+        
+        elif medida == "Nivel desestacionalizado":
+            y_col = "SA"
+            nombre = "EMAE desestacionalizado"
+            y_title = "Índice base 2004=100"
+            custom = [_num_es(v, 1) for v in dfp[y_col]]
+            hover = "%{fullData.name}: %{customdata}<extra></extra>"
+        
+            fig.add_trace(
+                go.Scatter(
+                    x=dfp["FechaLabel"],
+                    y=dfp[y_col],
+                    mode="lines+markers",
+                    name=nombre,
+                    customdata=custom,
+                    hovertemplate=hover,
+                )
+            )
+        
+        elif medida == "Tendencia-ciclo":
+            y_col = "Trend"
+            nombre = "EMAE tendencia-ciclo"
+            y_title = "Índice base 2004=100"
+            custom = [_num_es(v, 1) for v in dfp[y_col]]
+            hover = "%{fullData.name}: %{customdata}<extra></extra>"
+        
+            fig.add_trace(
+                go.Scatter(
+                    x=dfp["FechaLabel"],
+                    y=dfp[y_col],
+                    mode="lines+markers",
+                    name=nombre,
+                    customdata=custom,
+                    hovertemplate=hover,
+                )
+            )
+        
+        elif medida == "Variación mensual (s.e.)":
+            dfg = dfp.dropna(subset=["MoM"]).copy()
+            y_col = "MoM"
+            nombre = "Variación mensual (s.e.)"
+            y_title = "Variación mensual"
+            custom = [_pct_es(v, 1) for v in dfg[y_col]]
+            hover = "%{fullData.name}: %{customdata}<extra></extra>"
+        
+            fig.add_trace(
+                go.Bar(
+                    x=dfg["FechaLabel"],
+                    y=dfg[y_col],
+                    name=nombre,
+                    customdata=custom,
+                    hovertemplate=hover,
+                    opacity=0.45,
+                )
+            )
+            fig.add_hline(y=0, line_width=1, line_dash="solid", line_color="rgba(80,80,80,0.55)")
         
         elif medida == "Variación anual":
-            bar = dfp.dropna(subset=["YoY"]).copy()
-            if not bar.empty:
-                fig.add_trace(
-                    go.Bar(
-                        x=bar["FechaLabel"],
-                        y=bar["YoY"],
-                        name="Variación anual",
-                        customdata=[_pct_es(v, 1) for v in bar["YoY"]],
-                        hovertemplate="%{fullData.name}: %{customdata}<extra></extra>",
-                        opacity=0.28,
-                    ),
-                    secondary_y=True,
+            dfg = dfp.dropna(subset=["YoY"]).copy()
+            y_col = "YoY"
+            nombre = "Variación anual"
+            y_title = "Variación anual"
+            custom = [_pct_es(v, 1) for v in dfg[y_col]]
+            hover = "%{fullData.name}: %{customdata}<extra></extra>"
+        
+            fig.add_trace(
+                go.Bar(
+                    x=dfg["FechaLabel"],
+                    y=dfg[y_col],
+                    name=nombre,
+                    customdata=custom,
+                    hovertemplate=hover,
+                    opacity=0.45,
                 )
-                y2 = bar["YoY"]
+            )
+            fig.add_hline(y=0, line_width=1, line_dash="solid", line_color="rgba(80,80,80,0.55)")
+
+
+        
         # eje X: mostrar solo años
         tick_df = dfp[dfp["Date"].dt.month == 1].copy()
 
@@ -581,37 +582,28 @@ def render_macro_pbi_emae(go_to):
             ticktext=tick_df["Date"].dt.year.astype(str),
         )
 
-        fig.update_yaxes(title_text="Índice base 2004=100", secondary_y=False)
-
-        if medida in ["Variación mensual", "Variación anual"] and not y2.empty:
-            y_min = float(np.nanmin(y2))
-            y_max = float(np.nanmax(y2))
-            pad = max(abs(y_min), abs(y_max), 1.0) * 0.15
-
-            lo = min(0.0, y_min) - pad
-            hi = max(0.0, y_max) + pad
-
-            ticks = np.linspace(lo, hi, 6)
-
-            fig.update_yaxes(
-                title_text=medida,
-                secondary_y=True,
-                range=[lo, hi],
-                tickmode="array",
-                tickvals=ticks,
-                ticktext=[_pct_es(v, 1) for v in ticks],
-                zeroline=True,
-                zerolinewidth=1,
-                zerolinecolor="rgba(80,80,80,0.55)",
-            )
+        if medida in ["Variación mensual (s.e.)", "Variación anual"]:
+            vals = dfg[y_col].dropna()
+            if not vals.empty:
+                y_min = float(vals.min())
+                y_max = float(vals.max())
+                pad = max(abs(y_min), abs(y_max), 1.0) * 0.15
+                lo = min(0.0, y_min) - pad
+                hi = max(0.0, y_max) + pad
+                ticks = np.linspace(lo, hi, 6)
+        
+                fig.update_yaxes(
+                    title_text=y_title,
+                    range=[lo, hi],
+                    tickmode="array",
+                    tickvals=ticks,
+                    ticktext=[_pct_es(v, 1) for v in ticks],
+                    zeroline=True,
+                    zerolinewidth=1,
+                    zerolinecolor="rgba(80,80,80,0.55)",
+                )
         else:
-            fig.update_yaxes(
-                title_text="",
-                secondary_y=True,
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,
-            )
+            fig.update_yaxes(title_text=y_title)
 
         fig.update_layout(
             height=520,
