@@ -286,87 +286,153 @@ def _last_brecha_from_macro_fx():
 
 
 # ============================================================
-# Merval USD (estable: última fecha común + limpieza de índice)
+# Merval USD — última rueda cerrada
 # ============================================================
 @st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
 def _last_merval_usd():
     """
-    MERVAL en USD = ^MERV / (YPFD.BA / YPF)
-    Estable: alinea por última fecha común normalizando índice a fecha.
+    MERVAL en USD = índice Merval / CCL implícito YPF.
+
+    Toma la última rueda cerrada:
+    - nunca usa datos de hoy;
+    - usa el último dato disponible <= ayer;
+    - si ayer no hubo mercado, toma la rueda anterior.
     """
     if yf is None:
         return None, None
 
-    def _close_series(dl):
-        if dl is None:
-            return None
-        if isinstance(dl, pd.Series):
-            return dl
-        if isinstance(dl, pd.DataFrame):
-            if "Close" in dl.columns:
-                s = dl["Close"]
-                if isinstance(s, pd.DataFrame):
-                    s = s.iloc[:, 0]
-                return s
-            if isinstance(dl.columns, pd.MultiIndex):
-                cols = list(dl.columns)
-                c1 = [c for c in cols if len(c) >= 2 and c[0] == "Close"]
-                if c1:
-                    s = dl[c1[0]]
-                    if isinstance(s, pd.DataFrame):
-                        s = s.iloc[:, 0]
-                    return s
-                c2 = [c for c in cols if len(c) >= 2 and c[1] == "Close"]
-                if c2:
-                    s = dl[c2[0]]
-                    if isinstance(s, pd.DataFrame):
-                        s = s.iloc[:, 0]
-                    return s
-        return None
-
-    try:
-        merv_dl = yf.download("^MERV", period="1y", progress=False, auto_adjust=False, group_by="column", threads=False)
-        ypf_ars_dl = yf.download("YPFD.BA", period="1y", progress=False, auto_adjust=False, group_by="column", threads=False)
-        ypf_usd_dl = yf.download("YPF", period="1y", progress=False, auto_adjust=False, group_by="column", threads=False)
-
-        merv = _close_series(merv_dl)
-        ypf_ars = _close_series(ypf_ars_dl)
-        ypf_usd = _close_series(ypf_usd_dl)
-    except Exception:
-        return None, None
-
-    if merv is None or ypf_ars is None or ypf_usd is None:
-        return None, None
-    if merv.empty or ypf_ars.empty or ypf_usd.empty:
-        return None, None
-
-    def _norm_index(s: pd.Series) -> pd.Series:
-        s2 = s.copy()
-        s2.index = pd.to_datetime(s2.index, errors="coerce")
+    def _download_close(ticker: str, period: str = "2y"):
         try:
-            s2.index = s2.index.tz_localize(None)
+            dl = yf.download(
+                ticker,
+                period=period,
+                progress=False,
+                auto_adjust=False,
+                group_by="column",
+                threads=False,
+            )
+        except Exception:
+            return None
+
+        if dl is None or dl.empty:
+            return None
+
+        # Columnas simples
+        if "Close" in dl.columns:
+            s = dl["Close"]
+            if isinstance(s, pd.DataFrame):
+                s = s.iloc[:, 0]
+
+        # Columnas MultiIndex
+        elif isinstance(dl.columns, pd.MultiIndex):
+            close_cols = [c for c in dl.columns if "Close" in c]
+            if not close_cols:
+                return None
+            s = dl[close_cols[0]]
+            if isinstance(s, pd.DataFrame):
+                s = s.iloc[:, 0]
+        else:
+            return None
+
+        s = s.copy()
+        s.index = pd.to_datetime(s.index, errors="coerce")
+
+        try:
+            s.index = s.index.tz_localize(None)
         except Exception:
             pass
-        s2.index = s2.index.normalize()
-        return s2
 
-    merv = _norm_index(merv).rename("^MERV")
-    ypf_ars = _norm_index(ypf_ars).rename("YPFD.BA")
-    ypf_usd = _norm_index(ypf_usd).rename("YPF")
+        s.index = s.index.normalize()
+        s = pd.to_numeric(s, errors="coerce").dropna().sort_index()
 
-    df = pd.concat([merv, ypf_ars, ypf_usd], axis=1).dropna()
+        if s.empty:
+            return None
+
+        return s
+
+    # Fecha máxima permitida: ayer en horario Argentina
+    try:
+        fecha_corte = (
+            pd.Timestamp.now(tz="America/Argentina/Buenos_Aires")
+            .normalize()
+            .tz_localize(None)
+            - pd.Timedelta(days=1)
+        )
+    except Exception:
+        fecha_corte = pd.Timestamp.today().normalize() - pd.Timedelta(days=1)
+
+    # 1) Índice Merval con fallback
+    merv = None
+
+    for tk in ["IMV.BA", "^MERV"]:
+        s = _download_close(tk, period="2y")
+        if s is not None and not s.empty:
+            merv = s.rename("MERV")
+            break
+
+    if merv is None or merv.empty:
+        return None, None
+
+    # 2) YPF local y ADR
+    ypf_ars = _download_close("YPFD.BA", period="2y")
+    ypf_usd = _download_close("YPF", period="2y")
+
+    if ypf_ars is None or ypf_usd is None:
+        return None, None
+    if ypf_ars.empty or ypf_usd.empty:
+        return None, None
+
+    # 3) Convertir a DataFrame
+    merv_df = merv.reset_index().rename(columns={"index": "Date"})
+    ypf_ars_df = ypf_ars.rename("YPFD_BA").reset_index().rename(columns={"index": "Date"})
+    ypf_usd_df = ypf_usd.rename("YPF_ADR").reset_index().rename(columns={"index": "Date"})
+
+    # 4) No usar datos de hoy
+    merv_df = merv_df[merv_df["Date"] <= fecha_corte].copy()
+    ypf_ars_df = ypf_ars_df[ypf_ars_df["Date"] <= fecha_corte].copy()
+    ypf_usd_df = ypf_usd_df[ypf_usd_df["Date"] <= fecha_corte].copy()
+
+    if merv_df.empty or ypf_ars_df.empty or ypf_usd_df.empty:
+        return None, None
+
+    # 5) Alinear por fecha del Merval, usando último dato disponible hacia atrás
+    df = merv_df.sort_values("Date")
+
+    df = pd.merge_asof(
+        df,
+        ypf_ars_df.sort_values("Date"),
+        on="Date",
+        direction="backward",
+        tolerance=pd.Timedelta(days=7),
+    )
+
+    df = pd.merge_asof(
+        df,
+        ypf_usd_df.sort_values("Date"),
+        on="Date",
+        direction="backward",
+        tolerance=pd.Timedelta(days=7),
+    )
+
+    df = df.dropna(subset=["MERV", "YPFD_BA", "YPF_ADR"]).sort_values("Date")
+
     if df.empty:
         return None, None
 
-    last_date = df.index.max()
-    last = df.loc[last_date]
+    # 6) Última rueda cerrada disponible
+    last = df.iloc[-1]
 
-    ccl_ypf = float(last["YPFD.BA"]) / float(last["YPF"])
+    ccl_ypf = float(last["YPFD_BA"]) / float(last["YPF_ADR"])
+
     if not np.isfinite(ccl_ypf) or ccl_ypf <= 0:
         return None, None
 
-    merval_usd = float(last["^MERV"]) / ccl_ypf
-    return float(merval_usd), pd.to_datetime(last_date)
+    merval_usd = float(last["MERV"]) / ccl_ypf
+
+    if not np.isfinite(merval_usd):
+        return None, None
+
+    return float(merval_usd), pd.to_datetime(last["Date"])
 
 
 # ============================================================
