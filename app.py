@@ -37,7 +37,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 # Configuración Streamlit
 # ----------------------------
 st.set_page_config(
-    page_title="Monitor CEU–UIA",
+    page_title="Tablero interactivo CEU–UIA",
     page_icon="assets/okok.png",
     layout="wide",
     initial_sidebar_state="collapsed",
