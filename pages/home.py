@@ -348,7 +348,7 @@ def render_main_home(go_to):
 
     # ---- HEADER ----
     st.markdown(
-        "<div class='home-title'>Monitor CEU–UIA</div>",
+        "<div class='home-title'>Tablero interactivo CEU–UIA</div>",
         unsafe_allow_html=True
     )
 
