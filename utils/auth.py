@@ -47,7 +47,7 @@ def check_login():
     st.markdown(
         """
         <div class="login-container">
-            <div class="login-title">Monitor CEU-UIA</div>
+            <div class="login-title">Tablero interactivo CEU-UIA</div>
             <div class="login-subtitle">Ingreso para usuarios de prueba</div>
         </div>
         """,
