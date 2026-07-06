@@ -396,7 +396,7 @@ def render_main_home(go_to):
     # Fila 3: 2 columnas externas
     r3 = st.columns(2, gap="large")
 
-        external_sections = [
+    external_sections = [
             ("🗺️ Monitor Provincial", EXTERNAL_APPS["monitor_provincial"]),
             ("🏢 Costos de produccion", EXTERNAL_APPS["monitor_costos"]),
     ]
