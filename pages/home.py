@@ -203,7 +203,7 @@ def render_main_home(go_to):
     EXTERNAL_APPS = {
     "monitor_provincial": "https://monitor-provincial-ceu-uia.streamlit.app/",
     "monitor_costos": "https://monitor-costos-uia.streamlit.app/",
-}
+    }
         
     logo_b64 = _img_to_b64("assets/okok.png")
 
