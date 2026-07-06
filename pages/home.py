@@ -196,6 +196,11 @@ def _build_news_ticker_html(df_news: pd.DataFrame, top_n: int = 12) -> str:
 
     return "<span class='tk-sep'>•</span>".join(parts)
 
+EXTERNAL_APPS = {
+    "monitor_provincial": "https://monitor-provincial-ceu-uia.streamlit.app/",
+    "monitor_costos": "https://monitor-costos-uia.streamlit.app/",
+}
+
 
 # ============================================================
 # HOME
@@ -389,6 +394,20 @@ def render_main_home(go_to):
                 go_to(target)
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+    # Fila 3: 2 columnas externas
+    r3 = st.columns(2, gap="large")
+
+        external_sections = [
+            ("🗺️ Monitor Provincial", EXTERNAL_APPS["monitor_provincial"]),
+            ("🏢 Costos de produccion", EXTERNAL_APPS["monitor_costos"]),
+    ]
+
+    for col, (label, url) in zip(r3, external_sections):
+        with col:
+            st.link_button(label, url, use_container_width=True)
+
+st.markdown("</div>", unsafe_allow_html=True)
 
     # LOGO
     st.markdown(
