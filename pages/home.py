@@ -405,7 +405,7 @@ def render_main_home(go_to):
         with col:
             st.link_button(label, url, use_container_width=True)
 
-st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # LOGO
     st.markdown(
