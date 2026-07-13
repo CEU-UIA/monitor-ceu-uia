@@ -397,8 +397,7 @@ def render_main_home(go_to):
     r3 = st.columns(2, gap="large")
 
     external_sections = [
-            ("🗺️ Monitor Provincial", EXTERNAL_APPS["monitor_provincial"]),
-            ("🏢 Costos de produccion", ""),
+            ("🗺️ Monitor Provincial", EXTERNAL_APPS["monitor_provincial"])
     ]
 
     for col, (label, url) in zip(r3, external_sections):
