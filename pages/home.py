@@ -398,7 +398,7 @@ def render_main_home(go_to):
 
     external_sections = [
             ("🗺️ Monitor Provincial", EXTERNAL_APPS["monitor_provincial"]),
-            ("🏢 Costos de produccion", EXTERNAL_APPS["monitor_costos"]),
+            ("🏢 Costos de produccion", ""),
     ]
 
     for col, (label, url) in zip(r3, external_sections):
