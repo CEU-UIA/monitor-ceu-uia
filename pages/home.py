@@ -467,28 +467,28 @@ def render_main_home(go_to):
 
    # LOGOS INSTITUCIONALES
     st.markdown(
-        f"""
-        <div class="institutional-logos">
-    
-            <div class="ceu-logo-block">
-                <img
-                    src="data:image/png;base64,{logo_b64}"
-                    class="ceu-logo"
-                />
+            f"""
+            <div class="institutional-logos">
+        
+                <div class="ceu-logo-block">
+                    <img
+                        src="data:image/png;base64,{logo_b64}"
+                        class="ceu-logo"
+                    />
+                </div>
+        
+                <div class="oit-logo-block">
+                    <div class="oit-support-text">Con el apoyo de</div>
+        
+                    <img
+                        src="data:image/svg+xml;base64,{logo_oit_b64}"
+                        class="oit-logo"
+                    />
+                </div>
+        
             </div>
-    
-            <div class="oit-logo-block">
-                <div class="oit-support-text">Con el apoyo de</div>
-    
-                <img
-                    src="data:image/svg+xml;base64,{logo_oit_b64}"
-                    class="oit-logo"
-                />
-            </div>
-    
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
 
     st.markdown("</div>", unsafe_allow_html=True)
