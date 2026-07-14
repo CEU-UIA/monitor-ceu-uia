@@ -207,7 +207,7 @@ def render_main_home(go_to):
         
     logo_b64 = _img_to_b64("assets/okok.png")
 
-    logo_oit_b64 = _img_to_b64("assets/logo_oit.svg")
+    logo_oit_b64 = _img_to_b64("assets/logo_oit.png")
 
     st.markdown(
         """
@@ -481,7 +481,7 @@ def render_main_home(go_to):
     <div class="oit-support-text">Con el apoyo de</div>
         
     <img
-    src="data:image/svg+xml;base64,{logo_oit_b64}"
+    src="data:image/png;base64,{logo_oit_b64}"
     class="oit-logo"
     />
     </div>
