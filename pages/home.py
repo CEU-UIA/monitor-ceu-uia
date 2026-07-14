@@ -207,6 +207,8 @@ def render_main_home(go_to):
         
     logo_b64 = _img_to_b64("assets/okok.png")
 
+    logo_oit_b64 = _img_to_b64("assets/logo_oit.png")
+
     st.markdown(
         """
         <style>
@@ -309,7 +311,65 @@ def render_main_home(go_to):
             box-shadow:0 18px 36px rgba(15,23,42,0.16) !important;
             border-color:rgba(15,23,42,0.22) !important;
           }
-
+            /* =======================
+               LOGOS INSTITUCIONALES
+            ======================= */
+            .institutional-logos{
+                width:100%;
+                margin-top:30px;
+                padding-bottom:18px;
+            
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                gap:70px;
+            }
+            
+            .ceu-logo-block,
+            .oit-logo-block{
+                display:flex;
+                flex-direction:column;
+                align-items:center;
+                justify-content:center;
+            }
+            
+            .ceu-logo{
+                width:96px;
+                height:auto;
+                display:block;
+            }
+            
+            .oit-support-text{
+                margin-bottom:7px;
+                font-family:Inter, "Segoe UI", Arial, sans-serif;
+                font-size:13px;
+                font-weight:500;
+                color:#64748b;
+            }
+            
+            .oit-logo{
+                width:125px;
+                height:auto;
+                display:block;
+            }
+            
+            @media (max-width:700px){
+                .institutional-logos{
+                    gap:38px;
+                }
+            
+                .ceu-logo{
+                    width:82px;
+                }
+            
+                .oit-logo{
+                    width:105px;
+                }
+            
+                .oit-support-text{
+                    font-size:12px;
+                }
+            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -406,11 +466,27 @@ def render_main_home(go_to):
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # LOGO
+   # LOGOS INSTITUCIONALES
     st.markdown(
         f"""
-        <div style="margin-top:30px;text-align:center;">
-          <img src="data:image/png;base64,{logo_b64}" width="96"/>
+        <div class="institutional-logos">
+    
+            <div class="ceu-logo-block">
+                <img
+                    src="data:image/png;base64,{logo_b64}"
+                    class="ceu-logo"
+                />
+            </div>
+    
+            <div class="oit-logo-block">
+                <div class="oit-support-text">Con el apoyo de</div>
+    
+                <img
+                    src="data:image/png;base64,{logo_oit_b64}"
+                    class="oit-logo"
+                />
+            </div>
+    
         </div>
         """,
         unsafe_allow_html=True,
