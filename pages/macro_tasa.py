@@ -610,6 +610,7 @@ def render_macro_tasa(go_to):
         plotly_chart(
             fig,
             use_container_width=True,
+            image_filename="tasas_interes",
             config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_tasas",
         )
@@ -862,6 +863,8 @@ def render_macro_tasa(go_to):
         plotly_chart(
             fig,
             use_container_width=True,
+            image_filename="reservas_internacionales",
+            show_csv_download=False,
             config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_reservas",
         )
@@ -873,7 +876,7 @@ def render_macro_tasa(go_to):
         # -------------------------
         export = df_plot.rename(columns={"value": "reservas_musd"}).copy()
         st.download_button(
-            "⬇️ Descargar CSV",
+            "⬇️ Descargar datos (CSV)",
             export.to_csv(index=False).encode("utf-8"),
             file_name=f"reservas_{pd.Timestamp(end_d).strftime('%Y-%m-%d')}.csv",
             mime="text/csv",
@@ -1160,6 +1163,7 @@ def render_macro_tasa(go_to):
         plotly_chart(
             fig,
             use_container_width=True,
+            image_filename="calidad_cartera",
             config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_calidad_cartera",
         )

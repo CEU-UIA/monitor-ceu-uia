@@ -488,6 +488,7 @@ def _render_empleo_chart(serie: pd.Series, fechas: pd.Series, titulo: str, chart
             x=df_vis["fecha"],
             y=df_vis["valor"],
             mode="lines",
+            name=titulo,
             line=dict(color="#2563a8", width=2.5),
             fill="tozeroy",
             fillcolor="rgba(37,99,168,0.07)",
@@ -548,6 +549,7 @@ def _render_empleo_chart(serie: pd.Series, fechas: pd.Series, titulo: str, chart
     plotly_chart(
         fig,
         use_container_width=True,
+        image_filename=chart_key.removeprefix("chart_"),
         config={"displayModeBar": True, "scrollZoom": False},
         key=chart_key,
     )

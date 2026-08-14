@@ -471,8 +471,13 @@ def render_morosidad(go_to):
                 titulo   = f"{'Saldo irregular (M$)' if usar_mm else 'Tasa de irregularidad (%)'} — {sector_t1}"
 
             with st.container(border=True):
-                plotly_chart(_fig_barras(nombres, valores, suf, titulo, bold_label=bold),
-                                use_container_width=True, config={"displayModeBar": True}, key="t1_chart")
+                plotly_chart(
+                    _fig_barras(nombres, valores, suf, titulo, bold_label=bold),
+                    use_container_width=True,
+                    image_filename="morosidad_sectores",
+                    config={"displayModeBar": True},
+                    key="t1_chart",
+                )
             st.markdown("<div class='mora-caption'>Fuente: BCRA — Central de deudores del sistema financiero</div>",
                         unsafe_allow_html=True)
 
@@ -515,8 +520,13 @@ def render_morosidad(go_to):
                 titulo2  = f"{'Saldo irregular (M$)' if usar_mm2 else 'Tasa de irregularidad (%)'} — {subsector_t2}"
 
             with st.container(border=True):
-                plotly_chart(_fig_barras(nombres2, valores2, suf2, titulo2, bold_label=bold2),
-                                use_container_width=True, config={"displayModeBar": True}, key="t2_chart")
+                plotly_chart(
+                    _fig_barras(nombres2, valores2, suf2, titulo2, bold_label=bold2),
+                    use_container_width=True,
+                    image_filename="morosidad_subsectores",
+                    config={"displayModeBar": True},
+                    key="t2_chart",
+                )
             st.markdown("<div class='mora-caption'>Fuente: BCRA — Central de deudores del sistema financiero</div>",
                         unsafe_allow_html=True)
 
@@ -611,6 +621,7 @@ def render_morosidad(go_to):
                 plotly_chart(
                     _fig_lineas(df_series3, suf3, titulo3),
                     use_container_width=True,
+                    image_filename="morosidad_evolucion",
                     config={"displayModeBar": True},
                     key="t3_chart",
                 )

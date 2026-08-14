@@ -7,6 +7,7 @@ import re
 import unicodedata
 from typing import Any
 
+import pandas as pd
 import streamlit as st
 
 
@@ -77,6 +78,73 @@ def _apply_spanish_date_axes(fig: Any) -> None:
         axis.update(**updates)
 
 
+def _as_list(values: Any) -> list[Any]:
+    """Normaliza los arreglos de Plotly sin convertir strings en caracteres."""
+    if values is None:
+        return []
+    if isinstance(values, (str, bytes)):
+        return [values]
+    try:
+        return list(values)
+    except TypeError:
+        return [values]
+
+
+def _clean_category(value: Any) -> Any:
+    """Quita etiquetas HTML usadas solo para resaltar categorías del gráfico."""
+    if isinstance(value, str):
+        return re.sub(r"<[^>]+>", "", value)
+    return value
+
+
+def chart_data_frame(fig: Any) -> pd.DataFrame:
+    """Extrae en formato largo los datos efectivamente representados."""
+    rows: list[dict[str, Any]] = []
+    figure_title = getattr(getattr(fig.layout, "title", None), "text", None)
+
+    for trace_index, trace in enumerate(fig.data, start=1):
+        x_values = _as_list(getattr(trace, "x", None))
+        y_values = _as_list(getattr(trace, "y", None))
+        orientation = getattr(trace, "orientation", None)
+        custom_values = _as_list(getattr(trace, "customdata", None))
+
+        if orientation == "h":
+            categories = custom_values if len(custom_values) == len(y_values) else y_values
+            values = x_values
+        else:
+            categories = x_values or list(range(1, len(y_values) + 1))
+            values = y_values
+
+        row_count = max(len(categories), len(values))
+        series_name = (
+            getattr(trace, "name", None)
+            or figure_title
+            or f"Serie {trace_index}"
+        )
+        series_name = _clean_category(series_name)
+
+        for row_index in range(row_count):
+            category = categories[row_index] if row_index < len(categories) else None
+            value = values[row_index] if row_index < len(values) else None
+            rows.append(
+                {
+                    "serie": series_name,
+                    "fecha_o_categoria": _clean_category(category),
+                    "valor": value,
+                }
+            )
+
+    return pd.DataFrame(
+        rows,
+        columns=["serie", "fecha_o_categoria", "valor"],
+    )
+
+
+def _csv_bytes(data: pd.DataFrame) -> bytes:
+    """Genera un CSV UTF-8 con BOM para que Excel reconozca los acentos."""
+    return data.to_csv(index=False, date_format="%Y-%m-%d").encode("utf-8-sig")
+
+
 def apply_chart_style(fig: Any) -> Any:
     """Aplica el estándar visual y numérico del monitor a una figura."""
     fig.update_layout(
@@ -105,9 +173,10 @@ def plotly_chart(
     config: dict[str, Any] | None = None,
     key: str | None = None,
     image_filename: str | None = None,
+    show_csv_download: bool = True,
     **kwargs: Any,
 ):
-    """Renderiza Plotly con estilo español y descarga PNG habilitada."""
+    """Renderiza Plotly con estilo español y descargas PNG/CSV habilitadas."""
     apply_chart_style(fig)
 
     chart_config = dict(config or {})
@@ -132,4 +201,16 @@ def plotly_chart(
         }
     )
 
-    return st.plotly_chart(fig, config=chart_config, key=key, **kwargs)
+    chart_result = st.plotly_chart(fig, config=chart_config, key=key, **kwargs)
+
+    if show_csv_download:
+        download_name = _safe_image_filename(image_filename or key)
+        st.download_button(
+            "⬇️ Descargar datos (CSV)",
+            data=_csv_bytes(chart_data_frame(fig)),
+            file_name=f"{download_name}.csv",
+            mime="text/csv",
+            key=f"csv_{download_name}",
+        )
+
+    return chart_result

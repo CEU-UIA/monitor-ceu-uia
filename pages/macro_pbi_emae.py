@@ -626,6 +626,7 @@ def render_macro_pbi_emae(go_to):
         plotly_chart(
             fig,
             use_container_width=True,
+            image_filename="emae_evolucion",
             config={
                 "displayModeBar": True,
                 "scrollZoom": False,
@@ -918,7 +919,7 @@ def render_macro_pbi_emae(go_to):
                         texttemplate="%{text}",
                         cliponaxis=False,
                         hovertemplate="%{customdata}<br>%{x:.1f}%<extra></extra>",
-                        name="",
+                        name=subtitle,
                     )
                 )
 
@@ -947,6 +948,7 @@ def render_macro_pbi_emae(go_to):
                 plotly_chart(
                     fig2,
                     use_container_width=True,
+                    image_filename="emae_comparacion_sectores",
                     config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
                     key="chart_emae_sect_comp",
                 )
