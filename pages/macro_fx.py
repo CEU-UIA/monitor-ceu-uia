@@ -21,6 +21,7 @@ from services.macro_data import (
 from services.market_data import get_ccl_ypf_df_fast
 
 from ui.common import safe_pct
+from ui.charts import plotly_chart
 
 
 INDU_LOADING_PHRASES = [
@@ -578,7 +579,7 @@ def render_macro_fx(go_to):
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1.0),
         dragmode=False,
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
+    plotly_chart(fig, use_container_width=True, image_filename="tipo_cambio", config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False})
 
     st.download_button(
         "⬇️ Descargar CSV",
@@ -921,7 +922,7 @@ def render_macro_fx(go_to):
                 dragmode=False,
             )
 
-            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
+            plotly_chart(fig2, use_container_width=True, image_filename="tipo_cambio_real", config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False})
 
             export_cols = ["Date"] + [s for s in tcr_vars if s in df2_plot.columns]
             export2 = df2_plot[export_cols].copy().rename(columns={"Date": "date"})
@@ -1097,7 +1098,7 @@ def render_macro_fx(go_to):
     last_date_x = df_plot["Date"].max()
     fig.update_xaxes(range=[df_plot["Date"].min(), last_date_x + pd.Timedelta(days=10)])
 
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
+    plotly_chart(fig, use_container_width=True, image_filename="brecha_cambiaria", config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False})
 
     # Export
     export = df_plot[["Date", "Oficial", "CCL", "Brecha"]].copy()

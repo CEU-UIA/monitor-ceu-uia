@@ -9,6 +9,7 @@ import requests
 import streamlit.components.v1 as components
 
 from services.macro_data import get_ipc_indec_full
+from ui.charts import plotly_chart
 
 
 # ============================================================
@@ -862,10 +863,10 @@ def render_macro_precios(go_to):
         fixedrange=False,
     )
 
-    st.plotly_chart(
+    plotly_chart(
         fig,
         use_container_width=True,
-        config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+        config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
         key="precios_chart",
     )
 
@@ -1118,10 +1119,10 @@ def render_macro_precios(go_to):
         fixedrange=False,
     )
 
-    st.plotly_chart(
+    plotly_chart(
         fig,
         use_container_width=True,
-        config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+        config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
         key="ipc_chart",
     )
 
@@ -1440,10 +1441,10 @@ def render_macro_precios(go_to):
         fixedrange=False,
     )
 
-    st.plotly_chart(
+    plotly_chart(
         fig,
         use_container_width=True,
-        config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+        config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
         key="ipim_simple_chart",
     )
 

@@ -10,6 +10,7 @@ from services.macro_data import (
     get_emae_excel_full,
     get_emae_sectores_long,
 )
+from ui.charts import plotly_chart
 
 # ============================================================
 # Frases (loading)
@@ -21,6 +22,8 @@ INDU_LOADING_PHRASES = [
     "Los salarios industriales son 23% más altos que el promedio privado.",
     "Dos tercios de las exportaciones argentinas provienen de la industria.",
 ]
+
+MESES_ES_CORTO = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 # ============================================================
 # Helpers
@@ -620,11 +623,11 @@ def render_macro_pbi_emae(go_to):
             bargap=0.15,
         )
 
-        st.plotly_chart(
+        plotly_chart(
             fig,
             use_container_width=True,
             config={
-                "displayModeBar": False,
+                "displayModeBar": True,
                 "scrollZoom": False,
                 "doubleClick": False,
             },
@@ -711,7 +714,7 @@ def render_macro_pbi_emae(go_to):
             # Último mes disponible (para mensual y para el acumulado ene–último mes)
             max_dt = pd.to_datetime(df_sec["Date"].max())
             last_month_num = int(max_dt.month)
-            last_month_label = max_dt.strftime("%b").lower()
+            last_month_label = MESES_ES_CORTO[last_month_num - 1]
 
             years_all = sorted(df_sec["Date"].dt.year.unique().tolist(), reverse=True)
 
@@ -739,7 +742,8 @@ def render_macro_pbi_emae(go_to):
                 return s.replace("_", " ").capitalize()
 
             def _month_opt_label(dt: pd.Timestamp) -> str:
-                return pd.to_datetime(dt).strftime("%b-%Y").lower()
+                dt = pd.to_datetime(dt)
+                return f"{MESES_ES_CORTO[dt.month - 1]}-{dt.year}"
 
 
             # =========================
@@ -860,7 +864,7 @@ def render_macro_pbi_emae(go_to):
                 A = _month_level_by_sector(dt_a)
                 B = _month_level_by_sector(dt_b)
 
-                subtitle = f"Comparación mensual ({max_dt.strftime('%b').lower()}) · A={_month_opt_label(dt_a)} / B={_month_opt_label(dt_b)}"
+                subtitle = f"Comparación mensual ({last_month_label}) · A={_month_opt_label(dt_a)} / B={_month_opt_label(dt_b)}"
 
             # =========================
             # Armar %Δ = (A/B - 1) * 100
@@ -909,7 +913,7 @@ def render_macro_pbi_emae(go_to):
                         orientation="h",
                         marker=dict(color=colors),
                         customdata=y_plain,
-                        text=[f"{v:.1f}%" for v in x],
+                        text=[f"{v:.1f}%".replace(".", ",") for v in x],
                         textposition="outside",
                         texttemplate="%{text}",
                         cliponaxis=False,
@@ -940,10 +944,10 @@ def render_macro_pbi_emae(go_to):
 
                 st.markdown(f"<div class='fx-panel-title'>{subtitle}</div>", unsafe_allow_html=True)
 
-                st.plotly_chart(
+                plotly_chart(
                     fig2,
                     use_container_width=True,
-                    config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+                    config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
                     key="chart_emae_sect_comp",
                 )
 

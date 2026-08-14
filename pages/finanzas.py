@@ -8,6 +8,7 @@ import requests
 import streamlit.components.v1 as components
 
 from ui.common import safe_pct
+from ui.charts import plotly_chart
 
 # ✅ services
 from services.market_data import get_ccl_ypf_df_fast
@@ -889,10 +890,11 @@ def render_finanzas(go_to=None):
         x_min = pd.to_datetime(df_plot["Date"].min())
         fig.update_xaxes(range=[x_min, x_max + pd.Timedelta(days=10)])
 
-        st.plotly_chart(
+        plotly_chart(
             fig,
             use_container_width=True,
-            config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+            image_filename="riesgo_pais",
+            config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
         )
 
         export_cols = ["Date"] + [s for s in embi_vars if s in df_plot.columns]
@@ -1239,7 +1241,7 @@ def render_finanzas(go_to=None):
         x_min = pd.to_datetime(df_plot["Date"].min())
         fig.update_xaxes(range=[x_min, x_max + pd.Timedelta(days=10)])
 
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        plotly_chart(fig, use_container_width=True, image_filename="activos_argentinos_usd", config={"displayModeBar": True})
 
         # --- export ---
         export = df_plot.copy().rename(columns={"value": "usd"})
@@ -1598,7 +1600,7 @@ def render_finanzas(go_to=None):
             x_min = pd.to_datetime(df_plot["Date"].min())
             fig.update_xaxes(range=[x_min, x_max + pd.Timedelta(days=10)])
 
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            plotly_chart(fig, use_container_width=True, image_filename="mercados_internacionales", config={"displayModeBar": True})
 
             # ---- Export ----
             export = df_plot.copy()

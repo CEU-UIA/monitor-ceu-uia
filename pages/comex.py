@@ -6,6 +6,7 @@ import streamlit.components.v1 as components
 
 from services.metrics import calc_var, fmt, obtener_nombre_mes
 from services.comex_data import fetch_ica
+from ui.charts import plotly_chart
 
 MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
@@ -313,7 +314,7 @@ def render_comex(go_to):
         tickangle=-90,
         tickfont=dict(size=11),
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar":False,"scrollZoom":False,"doubleClick":False})
+    plotly_chart(fig, use_container_width=True, image_filename="comercio_exterior", config={"displayModeBar": True,"scrollZoom":False,"doubleClick":False})
 
     export_cols = [c for c in ["fecha","expo_total","impo_total","saldo"] if c in dff.columns]
     st.download_button("\u2b07\ufe0f Descargar CSV",
@@ -374,7 +375,7 @@ def render_comex(go_to):
         st.markdown('<div class="cx-chart-header cx-chart-header-expo"><div class="cx-chart-dot cx-chart-dot-expo"></div><span class="cx-chart-label cx-chart-label-expo">Exportaciones</span></div>', unsafe_allow_html=True)
         fig_expo = _bar_fig(df, EXP_ROWS, mode, "rgba(37,99,235,0.65)", "rgba(37,99,235,0.35)")
         if fig_expo:
-            st.plotly_chart(fig_expo, use_container_width=True, config={"displayModeBar":False,"scrollZoom":False,"doubleClick":False}, key="cx_chart_expo")
+            plotly_chart(fig_expo, use_container_width=True, config={"displayModeBar": True,"scrollZoom":False,"doubleClick":False}, key="cx_chart_expo")
         else:
             st.info("Sin datos de exportaciones.")
 
@@ -382,7 +383,7 @@ def render_comex(go_to):
         st.markdown('<div class="cx-chart-header cx-chart-header-impo"><div class="cx-chart-dot cx-chart-dot-impo"></div><span class="cx-chart-label cx-chart-label-impo">Importaciones</span></div>', unsafe_allow_html=True)
         fig_impo = _bar_fig(df, IMP_ROWS, mode, "rgba(234,88,12,0.65)", "rgba(234,88,12,0.35)")
         if fig_impo:
-            st.plotly_chart(fig_impo, use_container_width=True, config={"displayModeBar":False,"scrollZoom":False,"doubleClick":False}, key="cx_chart_impo")
+            plotly_chart(fig_impo, use_container_width=True, config={"displayModeBar": True,"scrollZoom":False,"doubleClick":False}, key="cx_chart_impo")
         else:
             st.info("Sin datos de importaciones.")
 
@@ -498,8 +499,8 @@ def render_comex(go_to):
             tickangle=-90,
             tickfont=dict(size=11),
         )
-        st.plotly_chart(fig_evol, use_container_width=True,
-            config={"displayModeBar":False,"scrollZoom":False,"doubleClick":False},
+        plotly_chart(fig_evol, use_container_width=True,
+            config={"displayModeBar": True,"scrollZoom":False,"doubleClick":False},
             key="cx_evol_chart")
 
     st.markdown("<div style='color:rgba(20,50,79,0.70);font-size:12px;margin-top:8px;'>Fuente: INDEC \u2014 Intercambio Comercial Argentino (ICA).</div>", unsafe_allow_html=True)

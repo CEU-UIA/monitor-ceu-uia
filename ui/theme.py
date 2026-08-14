@@ -6,11 +6,35 @@ def apply_global_styles() -> None:
     st.markdown(
         """
         <style>
+          @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap');
+
           /* Base */
+          html, body, .stApp, .stApp button, .stApp input, .stApp textarea,
+          .stApp [data-baseweb="select"], .stApp [data-baseweb="popover"] {
+            font-family: "Montserrat", "Segoe UI", Arial, sans-serif !important;
+          }
           .stApp { color: #0b2b4c !important; }
-          h1,h2,h3,h4,p,span,div,label { color: #0b2b4c !important; }
+          h1,h2,h3,h4,p,label { color: #0b2b4c !important; }
           [data-testid="stMetricValue"] { color: #0b2b4c !important; font-weight: 800 !important; }
           [data-testid="stMetricLabel"] { color: #526484 !important; font-weight: 600 !important; }
+
+          /* Etiquetas seleccionadas: evita texto azul sobre fondo azul. */
+          div[data-testid="stMultiSelect"] span[data-baseweb="tag"],
+          div[data-testid="stMultiSelect"] span[data-baseweb="tag"] span,
+          div[data-testid="stMultiSelect"] span[data-baseweb="tag"] div,
+          div[data-testid="stMultiSelect"] span[data-baseweb="tag"] p {
+            color: #ffffff !important;
+          }
+          div[data-testid="stMultiSelect"] span[data-baseweb="tag"] svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+          }
+
+          /* El menú desplegable conserva contraste en todas las páginas. */
+          div[role="listbox"] [role="option"],
+          div[role="listbox"] [role="option"] * {
+            color: #0b2b4c !important;
+          }
 
           /* Fondo gris claro */
           [data-testid="stAppViewContainer"] { background: #f2f4f7; }

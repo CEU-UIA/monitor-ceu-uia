@@ -7,6 +7,7 @@ import textwrap
 import streamlit.components.v1 as components
 from services.macro_data import get_monetaria_serie
 from ui.common import safe_pct   # 👈 ESTA LÍNEA
+from ui.charts import plotly_chart
 from services.macro_data import get_calidad_cartera_long
 
 
@@ -606,10 +607,10 @@ def render_macro_tasa(go_to):
 
 
 
-        st.plotly_chart(
+        plotly_chart(
             fig,
             use_container_width=True,
-            config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+            config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_tasas",
         )
 
@@ -822,8 +823,7 @@ def render_macro_tasa(go_to):
                     y=y0,
                     name="Reservas",
                     mode="lines",
-                    hovertemplate="%{x|%d/%m/%Y}<br>Millones USD: %{y:,.0f}<extra></extra>"
-                    .replace(",", "X").replace(".", ",").replace("X", "."),
+                    hovertemplate="%{x|%d/%m/%Y}<br>Millones USD: %{y:,.0f}<extra></extra>",
                 )
             )
 
@@ -859,10 +859,10 @@ def render_macro_tasa(go_to):
         x_min = pd.to_datetime(df_plot["Date"].min())
         fig.update_xaxes(range=[x_min, x_max + pd.Timedelta(days=10)])
 
-        st.plotly_chart(
+        plotly_chart(
             fig,
             use_container_width=True,
-            config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+            config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_reservas",
         )
 
@@ -1157,10 +1157,10 @@ def render_macro_tasa(go_to):
         x_min = pd.to_datetime(df_plot["Date"].min())
         fig.update_xaxes(range=[x_min, x_max + pd.Timedelta(days=10)])
 
-        st.plotly_chart(
+        plotly_chart(
             fig,
             use_container_width=True,
-            config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+            config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_calidad_cartera",
         )
 
