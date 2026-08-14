@@ -8,6 +8,7 @@ import streamlit.components.v1 as components
 
 from services.metrics import calc_var, fmt, obtener_nombre_mes
 from services.sipa_data import cargar_sipa_excel
+from ui.charts import plotly_chart
 
 
 # ============================================================
@@ -491,7 +492,7 @@ def _render_empleo_chart(serie: pd.Series, fechas: pd.Series, titulo: str, chart
             fill="tozeroy",
             fillcolor="rgba(37,99,168,0.07)",
             customdata=df_vis["hover_label"],
-            hovertemplate="%{customdata}<br><b>%{y:,.0f}</b> asalariados<extra></extra>".replace(",", "."),
+            hovertemplate="%{customdata}<br><b>%{y:,.0f}</b> asalariados<extra></extra>",
         )
     )
 
@@ -544,10 +545,10 @@ def _render_empleo_chart(serie: pd.Series, fechas: pd.Series, titulo: str, chart
         f"{titulo}</div>",
         unsafe_allow_html=True,
     )
-    st.plotly_chart(
+    plotly_chart(
         fig,
         use_container_width=True,
-        config={"displayModeBar": False, "scrollZoom": False},
+        config={"displayModeBar": True, "scrollZoom": False},
         key=chart_key,
     )
 

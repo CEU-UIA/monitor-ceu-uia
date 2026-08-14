@@ -10,6 +10,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from services.ipi_data import cargar_ipi_excel, procesar_serie_excel
+from ui.charts import plotly_chart
 
 
 # ============================================================
@@ -843,10 +844,10 @@ def render_ipi(go_to):
         x_max = pd.Timestamp(end_ts) + pd.Timedelta(days=10)
         fig.update_xaxes(range=[pd.Timestamp(start_ts), x_max])
 
-        st.plotly_chart(
+        plotly_chart(
             fig,
             use_container_width=True,
-            config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+            config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_ipi_panel1",
         )
 
@@ -1244,10 +1245,10 @@ def render_ipi(go_to):
 
         st.markdown(f"<div class='fx-panel-title'>{subtitle}</div>", unsafe_allow_html=True)
 
-        st.plotly_chart(
+        plotly_chart(
             fig2,
             use_container_width=True,
-            config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
+            config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_ipi_sect_comp",
         )
 
@@ -1505,7 +1506,7 @@ def render_ipi(go_to):
                             hovermode="x unified",
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                         )
-                        st.plotly_chart(figm, use_container_width=True)
+                        plotly_chart(figm, use_container_width=True, image_filename="ipi_rama_detalle")
 
                 if st.button("Cerrar", use_container_width=True):
                     st.session_state["ipi_modal_open"] = False
