@@ -121,7 +121,7 @@ EVOL_SERIES = {
 }
 
 
-def _bar_fig(df, rows, mode, bar_color_pos, bar_color_neg):
+def _bar_fig(df, rows, mode, bar_color_pos, bar_color_neg, series_name):
     data = []
     for label, key, _ in rows:
         if key not in df.columns:
@@ -144,6 +144,7 @@ def _bar_fig(df, rows, mode, bar_color_pos, bar_color_neg):
         text=[f"{v:.1f}%".replace(".", ",") for v in x],
         textposition="outside", texttemplate="%{text}",
         cliponaxis=False,
+        name=series_name,
         hovertemplate="%{y}<br>%{x:.1f}%<extra></extra>",
     ))
     fig.update_layout(
@@ -314,10 +315,16 @@ def render_comex(go_to):
         tickangle=-90,
         tickfont=dict(size=11),
     )
-    plotly_chart(fig, use_container_width=True, image_filename="comercio_exterior", config={"displayModeBar": True,"scrollZoom":False,"doubleClick":False})
+    plotly_chart(
+        fig,
+        use_container_width=True,
+        image_filename="comercio_exterior",
+        show_csv_download=False,
+        config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
+    )
 
     export_cols = [c for c in ["fecha","expo_total","impo_total","saldo"] if c in dff.columns]
-    st.download_button("\u2b07\ufe0f Descargar CSV",
+    st.download_button("\u2b07\ufe0f Descargar datos (CSV)",
         dff[export_cols].copy().rename(columns={"fecha":"date"}).to_csv(index=False).encode("utf-8"),
         file_name="comex_ica.csv", mime="text/csv", use_container_width=False, key="dl_comex_csv")
     st.markdown("<div style='color:rgba(20,50,79,0.70);font-size:12px;margin-top:10px;'>Fuente: INDEC \u2014 Intercambio Comercial Argentino (ICA).</div>", unsafe_allow_html=True)
@@ -373,17 +380,43 @@ def render_comex(go_to):
     col_expo, col_impo = st.columns(2, gap="large")
     with col_expo:
         st.markdown('<div class="cx-chart-header cx-chart-header-expo"><div class="cx-chart-dot cx-chart-dot-expo"></div><span class="cx-chart-label cx-chart-label-expo">Exportaciones</span></div>', unsafe_allow_html=True)
-        fig_expo = _bar_fig(df, EXP_ROWS, mode, "rgba(37,99,235,0.65)", "rgba(37,99,235,0.35)")
+        fig_expo = _bar_fig(
+            df,
+            EXP_ROWS,
+            mode,
+            "rgba(37,99,235,0.65)",
+            "rgba(37,99,235,0.35)",
+            "Exportaciones",
+        )
         if fig_expo:
-            plotly_chart(fig_expo, use_container_width=True, config={"displayModeBar": True,"scrollZoom":False,"doubleClick":False}, key="cx_chart_expo")
+            plotly_chart(
+                fig_expo,
+                use_container_width=True,
+                image_filename="comex_composicion_exportaciones",
+                config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
+                key="cx_chart_expo",
+            )
         else:
             st.info("Sin datos de exportaciones.")
 
     with col_impo:
         st.markdown('<div class="cx-chart-header cx-chart-header-impo"><div class="cx-chart-dot cx-chart-dot-impo"></div><span class="cx-chart-label cx-chart-label-impo">Importaciones</span></div>', unsafe_allow_html=True)
-        fig_impo = _bar_fig(df, IMP_ROWS, mode, "rgba(234,88,12,0.65)", "rgba(234,88,12,0.35)")
+        fig_impo = _bar_fig(
+            df,
+            IMP_ROWS,
+            mode,
+            "rgba(234,88,12,0.65)",
+            "rgba(234,88,12,0.35)",
+            "Importaciones",
+        )
         if fig_impo:
-            plotly_chart(fig_impo, use_container_width=True, config={"displayModeBar": True,"scrollZoom":False,"doubleClick":False}, key="cx_chart_impo")
+            plotly_chart(
+                fig_impo,
+                use_container_width=True,
+                image_filename="comex_composicion_importaciones",
+                config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
+                key="cx_chart_impo",
+            )
         else:
             st.info("Sin datos de importaciones.")
 
@@ -499,8 +532,12 @@ def render_comex(go_to):
             tickangle=-90,
             tickfont=dict(size=11),
         )
-        plotly_chart(fig_evol, use_container_width=True,
-            config={"displayModeBar": True,"scrollZoom":False,"doubleClick":False},
-            key="cx_evol_chart")
+        plotly_chart(
+            fig_evol,
+            use_container_width=True,
+            image_filename="comex_evolucion_rubros",
+            config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
+            key="cx_evol_chart",
+        )
 
     st.markdown("<div style='color:rgba(20,50,79,0.70);font-size:12px;margin-top:8px;'>Fuente: INDEC \u2014 Intercambio Comercial Argentino (ICA).</div>", unsafe_allow_html=True)

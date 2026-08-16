@@ -847,6 +847,7 @@ def render_ipi(go_to):
         plotly_chart(
             fig,
             use_container_width=True,
+            image_filename="ipi_evolucion",
             config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_ipi_panel1",
         )
@@ -1221,7 +1222,7 @@ def render_ipi(go_to):
                 texttemplate="%{text}",
                 cliponaxis=False,
                 hovertemplate="%{customdata}<br>%{x:.1f}%<extra></extra>",
-                name="",
+                name=subtitle,
             )
         )
 
@@ -1248,6 +1249,7 @@ def render_ipi(go_to):
         plotly_chart(
             fig2,
             use_container_width=True,
+            image_filename="ipi_comparacion_ramas",
             config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
             key="chart_ipi_sect_comp",
         )

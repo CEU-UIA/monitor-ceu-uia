@@ -894,13 +894,14 @@ def render_finanzas(go_to=None):
             fig,
             use_container_width=True,
             image_filename="riesgo_pais",
+            show_csv_download=False,
             config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
         )
 
         export_cols = ["Date"] + [s for s in embi_vars if s in df_plot.columns]
         export = df_plot[export_cols].copy().rename(columns={"Date": "date"})
         st.download_button(
-            "⬇️ Descargar CSV",
+            "⬇️ Descargar datos (CSV)",
             export.to_csv(index=False).encode("utf-8"),
             file_name=f"embi_{pd.Timestamp(end_d).strftime('%Y-%m-%d')}.csv",
             mime="text/csv",
@@ -1241,7 +1242,13 @@ def render_finanzas(go_to=None):
         x_min = pd.to_datetime(df_plot["Date"].min())
         fig.update_xaxes(range=[x_min, x_max + pd.Timedelta(days=10)])
 
-        plotly_chart(fig, use_container_width=True, image_filename="activos_argentinos_usd", config={"displayModeBar": True})
+        plotly_chart(
+            fig,
+            use_container_width=True,
+            image_filename="activos_argentinos_usd",
+            show_csv_download=False,
+            config={"displayModeBar": True},
+        )
 
         # --- export ---
         export = df_plot.copy().rename(columns={"value": "usd"})
@@ -1249,7 +1256,7 @@ def render_finanzas(go_to=None):
         export["ticker"] = "" if sel_tkr == "__MERVUSD__" else sel_tkr
 
         st.download_button(
-            "⬇️ Descargar CSV",
+            "⬇️ Descargar datos (CSV)",
             export.to_csv(index=False).encode("utf-8"),
             file_name=f"arg_usd_{('merval_usd' if sel_tkr=='__MERVUSD__' else sel_tkr)}_{end_d}.csv",
             mime="text/csv",
@@ -1600,12 +1607,18 @@ def render_finanzas(go_to=None):
             x_min = pd.to_datetime(df_plot["Date"].min())
             fig.update_xaxes(range=[x_min, x_max + pd.Timedelta(days=10)])
 
-            plotly_chart(fig, use_container_width=True, image_filename="mercados_internacionales", config={"displayModeBar": True})
+            plotly_chart(
+                fig,
+                use_container_width=True,
+                image_filename="mercados_internacionales",
+                show_csv_download=False,
+                config={"displayModeBar": True},
+            )
 
             # ---- Export ----
             export = df_plot.copy()
             st.download_button(
-                "⬇️ Descargar CSV",
+                "⬇️ Descargar datos (CSV)",
                 export.to_csv(index=False).encode("utf-8"),
                 file_name=f"internacional_{tkr}_{pd.Timestamp(end_d).strftime('%Y-%m-%d')}.csv",
                 mime="text/csv",

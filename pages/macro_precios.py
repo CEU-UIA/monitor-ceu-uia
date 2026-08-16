@@ -866,6 +866,7 @@ def render_macro_precios(go_to):
     plotly_chart(
         fig,
         use_container_width=True,
+        image_filename="precios_evolucion",
         config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
         key="precios_chart",
     )
@@ -1122,6 +1123,7 @@ def render_macro_precios(go_to):
     plotly_chart(
         fig,
         use_container_width=True,
+        image_filename="ipc_divisiones",
         config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
         key="ipc_chart",
     )
@@ -1444,6 +1446,7 @@ def render_macro_precios(go_to):
     plotly_chart(
         fig,
         use_container_width=True,
+        image_filename="ipim_aperturas",
         config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
         key="ipim_simple_chart",
     )

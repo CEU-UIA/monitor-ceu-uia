@@ -579,10 +579,16 @@ def render_macro_fx(go_to):
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1.0),
         dragmode=False,
     )
-    plotly_chart(fig, use_container_width=True, image_filename="tipo_cambio", config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False})
+    plotly_chart(
+        fig,
+        use_container_width=True,
+        image_filename="tipo_cambio",
+        show_csv_download=False,
+        config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
+    )
 
     st.download_button(
-        "⬇️ Descargar CSV",
+        "⬇️ Descargar datos (CSV)",
         df_plot.to_csv(index=False).encode("utf-8"),
         file_name="tc.csv",
         mime="text/csv",
@@ -922,7 +928,13 @@ def render_macro_fx(go_to):
                 dragmode=False,
             )
 
-            plotly_chart(fig2, use_container_width=True, image_filename="tipo_cambio_real", config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False})
+            plotly_chart(
+                fig2,
+                use_container_width=True,
+                image_filename="tipo_cambio_real",
+                show_csv_download=False,
+                config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
+            )
 
             export_cols = ["Date"] + [s for s in tcr_vars if s in df2_plot.columns]
             export2 = df2_plot[export_cols].copy().rename(columns={"Date": "date"})
@@ -932,7 +944,7 @@ def render_macro_fx(go_to):
                 export2["brecha_pct_asof"] = df2_plot["Brecha"]
 
             st.download_button(
-                label="⬇️ Descargar CSV",
+                label="⬇️ Descargar datos (CSV)",
                 data=export2.to_csv(index=False).encode("utf-8"),
                 file_name=f"tcr_{pd.Timestamp(end2).strftime('%Y-%m-%d')}.csv",
                 mime="text/csv",
@@ -1098,7 +1110,13 @@ def render_macro_fx(go_to):
     last_date_x = df_plot["Date"].max()
     fig.update_xaxes(range=[df_plot["Date"].min(), last_date_x + pd.Timedelta(days=10)])
 
-    plotly_chart(fig, use_container_width=True, image_filename="brecha_cambiaria", config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False})
+    plotly_chart(
+        fig,
+        use_container_width=True,
+        image_filename="brecha_cambiaria",
+        show_csv_download=False,
+        config={"displayModeBar": True, "scrollZoom": False, "doubleClick": False},
+    )
 
     # Export
     export = df_plot[["Date", "Oficial", "CCL", "Brecha"]].copy()
@@ -1140,7 +1158,7 @@ def render_macro_fx(go_to):
     )
 
     st.download_button(
-        label="⬇️ Descargar CSV",
+        label="⬇️ Descargar datos (CSV)",
         data=export.to_csv(index=False).encode("utf-8"),
         file_name=f"brecha_{pd.Timestamp(end_b).strftime('%Y-%m-%d')}.csv",
         mime="text/csv",
