@@ -14,6 +14,19 @@ import streamlit as st
 CHART_FONT = 'Montserrat, "Segoe UI", Arial, sans-serif'
 CHART_TEXT_COLOR = "#0b2b4c"
 CHART_BACKGROUND = "#ffffff"
+CHART_PRIMARY_COLOR = "#2C5378"
+CHART_COLORWAY = [
+    CHART_PRIMARY_COLOR,
+    "#EF553B",
+    "#00CC96",
+    "#AB63FA",
+    "#FFA15A",
+    "#19D3F3",
+    "#FF6692",
+    "#B6E880",
+    "#FF97FF",
+    "#FECB52",
+]
 
 # Se deja únicamente la descarga como imagen. Así la opción queda siempre
 # disponible sin sumar controles de navegación que no utiliza el tablero.
@@ -151,6 +164,7 @@ def apply_chart_style(fig: Any) -> Any:
         template="plotly_white",
         paper_bgcolor=CHART_BACKGROUND,
         plot_bgcolor=CHART_BACKGROUND,
+        colorway=CHART_COLORWAY,
         separators=",.",  # decimal con coma y miles con punto
         font=dict(family=CHART_FONT, color=CHART_TEXT_COLOR),
         hoverlabel=dict(font=dict(family=CHART_FONT)),

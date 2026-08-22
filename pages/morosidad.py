@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import numpy as np
 import streamlit.components.v1 as components
 
-from ui.charts import plotly_chart
+from ui.charts import CHART_PRIMARY_COLOR, plotly_chart
 
 # ============================================================
 # Config
@@ -312,7 +312,7 @@ def _fig_lineas(df_series, sufijo, titulo):
         return go.Figure()
 
     colores_linea = [
-        "#1B2D6B", "#c0392b", "#2980b9", "#27ae60", "#8e44ad",
+        "#1B2D6B", "#c0392b", "#2980b9", "#27ae60", CHART_PRIMARY_COLOR,
         "#e67e22", "#16a085", "#d35400", "#2c3e50", "#7f8c8d",
     ]
 
