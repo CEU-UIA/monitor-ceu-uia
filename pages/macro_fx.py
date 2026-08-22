@@ -17,8 +17,8 @@ from services.macro_data import (
     get_itcrm_excel_long,
 )
 
-# ✅ CCL desde services (NO yfinance acá)
-from services.market_data import get_ccl_ypf_df_fast
+# CCL directo desde services, con respaldo de Yahoo si la API no responde.
+from services.market_data import get_ccl_df
 
 from ui.common import safe_pct
 from ui.charts import plotly_chart
@@ -266,9 +266,15 @@ def render_macro_fx(go_to):
     bands = bands.dropna(subset=["Date", "lower", "upper"])
 
     # -------------------------
-    # CCL proxy (FAST) desde services — igual que Home
+    # CCL histórico directo desde services — igual que Home
     # -------------------------
-    ccl_df = get_ccl_ypf_df_fast(period="5y", prefer_adj=True)
+    ccl_df = get_ccl_df()
+    source_values = ccl_df.get("source", pd.Series(dtype="object")).dropna()
+    ccl_source_label = (
+        str(source_values.iloc[-1])
+        if not source_values.empty
+        else "serie de CCL no disponible"
+    )
 
     ccl = ccl_df.rename(columns={"value": "CCL"}).copy()
     ccl["Date"] = _fix_date(ccl["Date"])
@@ -326,6 +332,7 @@ def render_macro_fx(go_to):
             ccl_s[["Date_key", "CCL"]].sort_values("Date_key"),
             on="Date_key",
             direction="backward",
+            tolerance=pd.Timedelta(days=7).value,
         )
     
         tmpb["Brecha"] = (tmpb["CCL"] / tmpb["Oficial"] - 1) * 100
@@ -349,7 +356,7 @@ def render_macro_fx(go_to):
         header_var = "TC Mayorista"
         label_unidad = "ARS/USD"
 
-    # --- Guardas anti-baches (BCRA/Yahoo) para el header ---
+    # --- Guardas anti-baches (BCRA/CCL) para el header ---
     if hdr_df is None or hdr_df.empty or ("Date" not in hdr_df.columns) or ("VAL" not in hdr_df.columns):
         st.warning("Tipo de cambio: sin datos para el header (API sin respuesta o DF vacío). Reintentá más tarde.")
         return
@@ -596,7 +603,7 @@ def render_macro_fx(go_to):
 
     st.markdown(
         "<div style='color:rgba(20,50,79,0.70); font-size:12px;'>"
-        "Fuente: CEU-UIA en base a BCRA y Yahoo Finance (proxy CCL: YPFD.BA/YPF)."
+        f"Fuente: CEU-UIA en base a BCRA y {ccl_source_label}."
         "</div>",
         unsafe_allow_html=True,
     )
@@ -954,7 +961,7 @@ def render_macro_fx(go_to):
 
             st.markdown(
                 "<div style='color:rgba(20,50,79,0.70); font-size:12px; margin-top:10px;'>"
-                "Fuente: BCRA — ITCRMSerie.xlsx. CCL proxy: YPFD.BA/YPF (Yahoo Finance). Brecha as-of."
+                f"Fuente: BCRA — ITCRMSerie.xlsx. CCL: {ccl_source_label}. Brecha as-of."
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -1068,10 +1075,14 @@ def render_macro_fx(go_to):
 
     max_d = df_ok["Date"].max().date()
     min_d_real = df_ok["Date"].min().date()
-    
-    # mostrar solo 1 año hacia atrás
-    min_d = max(min_d_real, (pd.to_datetime(df_ok["Date"].max()) - pd.Timedelta(days=365)).date())
-    default_start = min_d
+
+    # La selección comienza en un año, pero el control permite consultar toda
+    # la historia disponible (desde 2013 para la fuente directa de CCL).
+    min_d = min_d_real
+    default_start = max(
+        min_d_real,
+        (pd.to_datetime(df_ok["Date"].max()) - pd.Timedelta(days=365)).date(),
+    )
 
     st.markdown("<div class='fx-panel-title'>Rango de fechas</div>", unsafe_allow_html=True)
     start_b, end_b = st.slider(
@@ -1123,9 +1134,21 @@ def render_macro_fx(go_to):
     export["Date"] = _fix_date(export["Date"])
     export = export.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
 
-    # Si el DF de CCL trae también YPF_ARS/YPF_USD, los agregamos; si no, seguimos sin eso.
+    # Adjuntamos metadatos de la fuente directa o del proxy de respaldo.
     if ccl is not None and not ccl.empty:
-        extra_cols = [c for c in ["YPF_ARS", "YPF_USD"] if c in ccl.columns]
+        extra_cols = [
+            col
+            for col in [
+                "buy",
+                "sell",
+                "value_raw",
+                "adjusted",
+                "source",
+                "YPF_ARS",
+                "YPF_USD",
+            ]
+            if col in ccl.columns
+        ]
         if extra_cols:
             ccl_cols = ccl[["Date"] + extra_cols].copy()
             ccl_cols["Date"] = _fix_date(ccl_cols["Date"])
@@ -1144,6 +1167,7 @@ def render_macro_fx(go_to):
                 ccl_cols.drop(columns=["Date"]).sort_values("Date_key"),
                 on="Date_key",
                 direction="backward",
+                tolerance=pd.Timedelta(days=7).value,
             ).drop(columns=["Date_key"])
 
     export = export.rename(
@@ -1152,6 +1176,11 @@ def render_macro_fx(go_to):
             "Brecha": "brecha_pct",
             "Oficial": "oficial",
             "CCL": "ccl",
+            "buy": "ccl_compra",
+            "sell": "ccl_venta",
+            "value_raw": "ccl_valor_original",
+            "adjusted": "ccl_valor_ajustado",
+            "source": "fuente_ccl",
             "YPF_ARS": "ypf_ars",
             "YPF_USD": "ypf_usd",
         }
@@ -1168,7 +1197,7 @@ def render_macro_fx(go_to):
 
     st.markdown(
         "<div style='color:rgba(20,50,79,0.70); font-size:12px; margin-top:10px;'>"
-        "Fuente: Yahoo Finance (proxy CCL: YPFD.BA y YPF) y tipo de cambio mayorista A3500 (BCRA)."
+        f"Fuente: {ccl_source_label} y tipo de cambio mayorista A3500 (BCRA)."
         "</div>",
         unsafe_allow_html=True,
     )

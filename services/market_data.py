@@ -1,7 +1,10 @@
 # services/market_data.py
 from __future__ import annotations
 
+import time
+
 import pandas as pd
+import requests
 import streamlit as st
 
 # yfinance opcional
@@ -11,10 +14,96 @@ except Exception:
     yf = None
 
 
+ARGENTINA_DATOS_CCL_URL = (
+    "https://api.argentinadatos.com/v1/cotizaciones/dolares/contadoconliqui"
+)
+CCL_DIRECT_SOURCE = "ArgentinaDatos (fuente: DolarApi)"
+CCL_YPF_SOURCE = "Yahoo Finance (proxy YPFD.BA/YPF)"
+_CCL_DIRECT_COLUMNS = [
+    "Date",
+    "value",
+    "buy",
+    "sell",
+    "value_raw",
+    "adjusted",
+    "source",
+]
 
 
+def _empty_ccl_direct_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=_CCL_DIRECT_COLUMNS)
 
-import time
+
+def _normalise_ccl_argentina_datos(payload) -> pd.DataFrame:
+    """Normaliza y controla la serie histórica directa de CCL."""
+    if not isinstance(payload, list) or not payload:
+        return _empty_ccl_direct_df()
+
+    df = pd.DataFrame(payload)
+    if "fecha" not in df.columns:
+        return _empty_ccl_direct_df()
+
+    for column in ["compra", "venta"]:
+        if column not in df.columns:
+            df[column] = pd.NA
+
+    df["Date"] = pd.to_datetime(df["fecha"], errors="coerce")
+    df["buy"] = pd.to_numeric(df["compra"], errors="coerce")
+    df["sell"] = pd.to_numeric(df["venta"], errors="coerce")
+    df["value_raw"] = df["sell"].where(df["sell"] > 0, df["buy"])
+
+    df = (
+        df.dropna(subset=["Date", "value_raw"])
+        .loc[lambda x: x["value_raw"] > 0]
+        .drop_duplicates(subset=["Date"], keep="last")
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+    # La API completa fines de semana con el último dato. Conservamos sólo
+    # ruedas hábiles para no presentar esas repeticiones como observaciones.
+    df = df.loc[df["Date"].dt.weekday < 5].reset_index(drop=True)
+    if df.empty:
+        return _empty_ccl_direct_df()
+
+    df["value"] = df["value_raw"].astype("float64")
+
+    # Control robusto de errores puntuales: corrige únicamente un salto mayor
+    # a 12% que se revierte en la observación siguiente, siempre que los dos
+    # vecinos difieran menos de 5%. La serie vigente contiene un caso así el
+    # 02/05/2025; se conserva el valor original en ``value_raw``.
+    previous_value = df["value"].shift(1)
+    next_value = df["value"].shift(-1)
+    neighbours_midpoint = (previous_value + next_value) / 2.0
+    deviation_from_neighbours = (df["value"] / neighbours_midpoint - 1.0).abs()
+    move_between_neighbours = (next_value / previous_value - 1.0).abs()
+    adjusted = (
+        neighbours_midpoint.gt(0)
+        & deviation_from_neighbours.gt(0.12)
+        & move_between_neighbours.le(0.05)
+    )
+
+    df["adjusted"] = adjusted.fillna(False)
+    df.loc[df["adjusted"], "value"] = neighbours_midpoint[df["adjusted"]]
+    df["source"] = CCL_DIRECT_SOURCE
+
+    return df[_CCL_DIRECT_COLUMNS].reset_index(drop=True)
+
+
+@st.cache_data(ttl=60 * 60, show_spinner=False)
+def get_ccl_argentina_datos_df() -> pd.DataFrame:
+    """Serie directa de CCL (venta), publicada por ArgentinaDatos."""
+    response = requests.get(
+        ARGENTINA_DATOS_CCL_URL,
+        timeout=30,
+        headers={"User-Agent": "CEU-UIA-monitor/1.0"},
+    )
+    response.raise_for_status()
+    out = _normalise_ccl_argentina_datos(response.json())
+    if out.empty:
+        raise RuntimeError("ArgentinaDatos devolvió una serie CCL vacía o inválida")
+    return out
+
 
 def _history_one(ticker: str, start: str) -> pd.DataFrame:
     if yf is None:
@@ -107,8 +196,6 @@ def get_ccl_ypf_df(start: str = "2000-01-01", prefer_adj: bool = False) -> pd.Da
     return s.rename("value").reset_index().rename(columns={"index": "Date"})
 
 
-import time
-
 @st.cache_data(ttl=60 * 60, show_spinner=False)
 def get_ccl_ypf_df_fast(period: str = "2y", prefer_adj: bool = False) -> pd.DataFrame:
     """
@@ -167,7 +254,15 @@ def get_ccl_ypf_df_fast(period: str = "2y", prefer_adj: bool = False) -> pd.Data
                 raise RuntimeError("download devolvió vacío para YPFD.BA/YPF")
 
             df["value"] = (df["YPF_ARS"] / df["YPF_USD"]).replace([float("inf"), -float("inf")], pd.NA)
-            out = df[["value"]].dropna().reset_index().rename(columns={"index": "Date"})
+            out = (
+                df[["value", "YPF_ARS", "YPF_USD"]]
+                .dropna(subset=["value"])
+                .reset_index()
+                .rename(columns={"index": "Date"})
+            )
+            out["value_raw"] = out["value"]
+            out["adjusted"] = False
+            out["source"] = CCL_YPF_SOURCE
             return out
 
         except Exception as e:
@@ -178,6 +273,34 @@ def get_ccl_ypf_df_fast(period: str = "2y", prefer_adj: bool = False) -> pd.Data
     return pd.DataFrame(columns=["Date", "value"])
 
 
+@st.cache_data(ttl=60 * 60, show_spinner=False)
+def get_ccl_df() -> pd.DataFrame:
+    """
+    Serie histórica de CCL para el monitor.
+
+    Prioriza la cotización directa de ArgentinaDatos desde 2013. Si la API no
+    responde, utiliza transitoriamente el cociente YPFD.BA/YPF con precios de
+    cierre sin ajustar.
+    """
+    try:
+        return get_ccl_argentina_datos_df()
+    except Exception:
+        fallback = get_ccl_ypf_df_fast(period="max", prefer_adj=False).copy()
+
+    if fallback.empty:
+        return _empty_ccl_direct_df()
+
+    for column in ["buy", "sell"]:
+        if column not in fallback.columns:
+            fallback[column] = pd.NA
+    if "value_raw" not in fallback.columns:
+        fallback["value_raw"] = fallback["value"]
+    if "adjusted" not in fallback.columns:
+        fallback["adjusted"] = False
+    if "source" not in fallback.columns:
+        fallback["source"] = CCL_YPF_SOURCE
+
+    return fallback.reset_index(drop=True)
 
 
 @st.cache_data(ttl=6 * 60 * 60, show_spinner=False)
