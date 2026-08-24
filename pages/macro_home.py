@@ -203,9 +203,9 @@ def _last_brecha_from_macro_fx():
     Estable: usa última fecha común exacta; si no hay, merge_asof con tolerancia.
     Rápido: usa tail() para no mergear todo.
     """
-    # ✅ CCL desde services (evita import circular con pages.macro_fx)
+    # CCL directo desde services (evita import circular con pages.macro_fx)
     try:
-        from services.market_data import get_ccl_ypf_df_fast
+        from services.market_data import get_ccl_df
     except Exception:
         return None, None
 
@@ -214,7 +214,7 @@ def _last_brecha_from_macro_fx():
         return None, None
 
     try:
-        ccl = get_ccl_ypf_df_fast(period="2y", prefer_adj=False)
+        ccl = get_ccl_df()
     except Exception:
         return None, None
 
