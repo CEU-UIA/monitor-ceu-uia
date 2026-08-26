@@ -1,16 +1,73 @@
+import base64
+from functools import lru_cache
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
 
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+
+
+@lru_cache(maxsize=1)
+def institutional_logo_sources() -> tuple[str, str]:
+    """Devuelve los logos institucionales como data URI para incrustarlos en HTML."""
+    sources = []
+    for filename in ("logo_ceu.png", "logo_oit.png"):
+        encoded = base64.b64encode((_ASSETS_DIR / filename).read_bytes()).decode("ascii")
+        sources.append(f"data:image/png;base64,{encoded}")
+    return tuple(sources)
+
+
 def topbar_logo() -> None:
-    """Logo institucional arriba a la derecha."""
-    _, col_logo = st.columns([10, 2], vertical_alignment="top")
-    with col_logo:
-        try:
-            # Nota: asegurate de subir assets/logo_ceu.png al repo
-            st.image("assets/logo_ceu.png", use_container_width=True)
-        except Exception:
-            st.markdown("### CEU - UIA")
+    """Logos institucionales del CEU y la OIT arriba a la derecha."""
+    try:
+        ceu_logo, oit_logo = institutional_logo_sources()
+        st.markdown(
+            f"""
+            <style>
+              .institutional-topbar {{
+                width: 100%;
+                display: flex;
+                justify-content: flex-end;
+                align-items: center;
+                gap: 14px;
+                margin: 0 0 0.75rem auto;
+              }}
+              .institutional-topbar .ceu-topbar-logo {{
+                width: 215px;
+                max-width: 70vw;
+                height: auto;
+                display: block;
+              }}
+              .institutional-topbar .oit-topbar-logo {{
+                width: 50px;
+                height: auto;
+                display: block;
+              }}
+              @media (max-width: 700px) {{
+                .institutional-topbar {{ gap: 10px; }}
+                .institutional-topbar .ceu-topbar-logo {{ width: 160px; }}
+                .institutional-topbar .oit-topbar-logo {{ width: 40px; }}
+              }}
+            </style>
+            <div class="institutional-topbar">
+              <img
+                src="{ceu_logo}"
+                class="ceu-topbar-logo"
+                alt="Centro de Estudios UIA"
+              />
+              <img
+                src="{oit_logo}"
+                class="oit-topbar-logo"
+                alt="Organización Internacional del Trabajo"
+              />
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    except OSError:
+        st.markdown("### CEU - UIA · OIT")
 
 
 def safe_pct(x, dec: int = 1) -> str:
@@ -39,4 +96,3 @@ def go_to(section: str):
     st.session_state["section"] = section
     st.query_params["section"] = section  # mantiene URL consistente
     st.rerun()
-
