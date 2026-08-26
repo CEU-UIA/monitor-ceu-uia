@@ -1,4 +1,6 @@
 import hmac
+from textwrap import dedent
+
 import streamlit as st
 
 from ui.common import institutional_logo_sources
@@ -18,25 +20,20 @@ def check_login():
 
     try:
         ceu_logo, oit_logo = institutional_logo_sources()
-        login_logos = f"""
-            <div class="login-logos">
-                <img
-                    src="{ceu_logo}"
-                    class="login-logo-ceu"
-                    alt="Centro de Estudios UIA"
-                />
-                <img
-                    src="{oit_logo}"
-                    class="login-logo-oit"
-                    alt="Organización Internacional del Trabajo"
-                />
-            </div>
-        """
+        login_logos = (
+            '<div class="login-logos">\n'
+            f'  <img src="{ceu_logo}" class="login-logo-ceu" '
+            'alt="Centro de Estudios UIA" />\n'
+            f'  <img src="{oit_logo}" class="login-logo-oit" '
+            'alt="Organización Internacional del Trabajo" />\n'
+            "</div>"
+        )
     except OSError:
         login_logos = '<div class="login-logo-fallback">CEU - UIA · OIT</div>'
 
     st.markdown(
-        """
+        dedent(
+            """\
         <style>
         .login-container {
             max-width: 420px;
@@ -86,18 +83,22 @@ def check_login():
             text-align: center;
         }
         </style>
-        """,
+        """
+        ),
         unsafe_allow_html=True,
     )
 
+    # El HTML debe comenzar en la primera columna. Si queda indentado, Markdown
+    # lo interpreta como un bloque de código y muestra el data URI en pantalla.
+    login_panel = (
+        '<div class="login-container">\n'
+        f"{login_logos}\n"
+        '  <div class="login-title">Tablero interactivo CEU-UIA</div>\n'
+        '  <div class="login-subtitle">Ingreso para usuarios de prueba</div>\n'
+        "</div>"
+    )
     st.markdown(
-        f"""
-        <div class="login-container">
-            {login_logos}
-            <div class="login-title">Tablero interactivo CEU-UIA</div>
-            <div class="login-subtitle">Ingreso para usuarios de prueba</div>
-        </div>
-        """,
+        login_panel,
         unsafe_allow_html=True,
     )
 
