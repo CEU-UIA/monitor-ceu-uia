@@ -1,6 +1,8 @@
 import hmac
 import streamlit as st
 
+from ui.common import institutional_logo_sources
+
 
 def check_login():
     """
@@ -13,6 +15,25 @@ def check_login():
 
     if st.session_state["logueado"]:
         return True
+
+    try:
+        ceu_logo, oit_logo = institutional_logo_sources()
+        login_logos = f"""
+            <div class="login-logos">
+                <img
+                    src="{ceu_logo}"
+                    class="login-logo-ceu"
+                    alt="Centro de Estudios UIA"
+                />
+                <img
+                    src="{oit_logo}"
+                    class="login-logo-oit"
+                    alt="Organización Internacional del Trabajo"
+                />
+            </div>
+        """
+    except OSError:
+        login_logos = '<div class="login-logo-fallback">CEU - UIA · OIT</div>'
 
     st.markdown(
         """
@@ -33,6 +54,31 @@ def check_login():
             margin-bottom: 0.3rem;
             text-align: center;
         }
+        .login-logos {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            margin-bottom: 1.25rem;
+        }
+        .login-logo-ceu {
+            width: 235px;
+            max-width: calc(100% - 78px);
+            height: auto;
+            display: block;
+        }
+        .login-logo-oit {
+            width: 58px;
+            height: auto;
+            display: block;
+        }
+        .login-logo-fallback {
+            margin-bottom: 1.25rem;
+            color: #12355B;
+            font-size: 1.1rem;
+            font-weight: 700;
+            text-align: center;
+        }
         .login-subtitle {
             font-size: 0.95rem;
             color: #666;
@@ -45,8 +91,9 @@ def check_login():
     )
 
     st.markdown(
-        """
+        f"""
         <div class="login-container">
+            {login_logos}
             <div class="login-title">Tablero interactivo CEU-UIA</div>
             <div class="login-subtitle">Ingreso para usuarios de prueba</div>
         </div>
