@@ -26,69 +26,6 @@ El punto de entrada principal es `app.py`. La aplicación usa un router propio b
 
 Todos los gráficos Plotly comparten fondo blanco, tipografía Montserrat, fechas y números en formato español, paleta institucional con color principal `#2C5378`, descarga en PNG y exportación de datos en CSV.
 
-## Inicio rápido
-
-### 1. Clonar el repositorio
-
-```bash
-git clone https://github.com/CEU-UIA/monitor-ceu-uia.git
-cd monitor-ceu-uia
-```
-
-### 2. Crear el entorno virtual
-
-Windows PowerShell:
-
-```powershell
-py -3.11 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-macOS o Linux:
-
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-### 3. Configurar usuarios locales
-
-La aplicación principal requiere un archivo `.streamlit/secrets.toml`. Este archivo contiene credenciales y no debe subirse al repositorio.
-
-Ejemplo mínimo:
-
-```toml
-[usuarios."1000"]
-clave = "reemplazar-por-una-clave-segura"
-nombre = "Usuario de desarrollo"
-
-[usuarios."2000"]
-clave = "otra-clave-segura"
-nombre = "Segundo usuario"
-```
-
-El identificador escrito entre comillas funciona como número de socio. La autenticación implementada en `utils/auth.py` es deliberadamente simple y mantiene la sesión mediante `st.session_state`.
-
-### 4. Ejecutar la aplicación
-
-```bash
-python -m streamlit run app.py
-```
-
-Streamlit abrirá, por defecto, `http://localhost:8501`.
-
-Existe además un punto de entrada independiente para morosidad:
-
-```bash
-python -m streamlit run app_morosidad.py
-```
-
-`app_morosidad.py` no aplica actualmente el login de `app.py`. Si se publica como aplicación separada, debe evaluarse si corresponde agregar autenticación.
-
 ## Estructura del proyecto
 
 ```text
@@ -171,36 +108,6 @@ Después de ejecutarlo, hay que revisar las fechas y los cambios antes de commit
 
 `services/ipi_data.py` descarga un archivo anual del INDEC. La URL contiene actualmente el año en el nombre del archivo. Cuando el INDEC publique una nueva versión anual, se debe verificar y, si corresponde, actualizar `sh_ipi_manufacturero_2026.xls` en ese servicio.
 
-## Convenciones para desarrollar
-
-### Navegación
-
-Para agregar una sección nueva:
-
-1. crear una función `render_<seccion>(go_to)` dentro de `pages/`;
-2. importarla en `app.py`;
-3. agregar la ruta al bloque del router;
-4. incorporar el acceso desde `pages/home.py` o `pages/macro_home.py`;
-5. usar `go_to("nombre_ruta")` para navegar y conservar el parámetro `section` en la URL.
-
-Durante el desarrollo también se puede abrir una sección directamente, por ejemplo: `http://localhost:8501/?section=macro_fx`.
-
-### Gráficos
-
-Los gráficos nuevos deben renderizarse con el wrapper común:
-
-```python
-from ui.charts import plotly_chart
-
-plotly_chart(
-    fig,
-    key="grafico_identificador_unico",
-    image_filename="nombre_del_archivo",
-    use_container_width=True,
-)
-```
-
-No conviene llamar directamente a `st.plotly_chart`, porque se perderían el estilo institucional, la configuración en español y las descargas comunes. Si una sección ya implementa su propio CSV, puede usar `show_csv_download=False` para evitar dos botones de descarga.
 
 ### Presentación y estilos
 
@@ -210,32 +117,7 @@ No conviene llamar directamente a `st.plotly_chart`, porque se perderían el est
 - Los textos visibles, ejes y nombres de columnas exportadas deben estar en español.
 - En HTML enviado a `st.markdown`, el bloque debe comenzar en la primera columna para que Markdown no lo interprete como código.
 
-### Servicios y manejo de errores
 
-- Las consultas externas deben tener `timeout`.
-- Una falla de red debe producir un mensaje entendible o un `DataFrame` vacío con esquema estable.
-- La descarga y limpieza de datos debe quedar en `services/`, no dentro de los componentes visuales, salvo casos heredados que todavía no fueron migrados.
-- Las funciones cacheadas no deberían devolver silenciosamente datos inválidos que luego queden almacenados.
-- Si cambia la estructura de un Excel oficial, revisar nombres de hojas, filas de encabezado y columnas antes de modificar la interfaz.
-
-## Pruebas
-
-Con el entorno virtual activo:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-Las pruebas actuales cubren principalmente la normalización y los controles de calidad de la serie directa de CCL.
-
-Antes de abrir un pull request también se recomienda ejecutar:
-
-```bash
-python -m compileall -q app.py app_morosidad.py pages services ui utils scripts
-git diff --check
-```
-
-El repositorio no tiene actualmente un flujo de integración continua que reemplace estas verificaciones locales.
 
 ## Despliegue en Streamlit Community Cloud
 
@@ -249,43 +131,6 @@ Configuración esperada:
 
 Los secretos nunca deben incluirse en commits, capturas o archivos compartidos. Después de modificar una fuente, un archivo de `assets` o una dependencia, conviene reiniciar la aplicación y verificar todas las secciones que consumen ese dato.
 
-## Problemas frecuentes
-
-### No aparece el formulario de acceso o se informa que faltan usuarios
-
-Verificar que exista `.streamlit/secrets.toml`, que la tabla se llame `usuarios` y que cada identificador tenga `clave` y `nombre`.
-
-### El IPI informa que INDEC devolvió HTML
-
-Suele indicar que cambió la URL anual, que el servidor respondió con una página de error o que bloqueó temporalmente la descarga. Abrir la URL configurada en `services/ipi_data.py` y confirmar que entregue un `.xls` válido.
-
-### Una serie online aparece vacía
-
-Revisar primero la disponibilidad de la fuente. Luego borrar la caché de Streamlit o reiniciar la aplicación. Yahoo Finance y algunos archivos oficiales pueden responder de forma intermitente.
-
-### Empleo muestra un período anterior
-
-Ejecutar `scripts/actualizar_sipa_assets.py`, verificar la última fecha informada por el script y subir los CSV resultantes.
-
-### Morosidad no refleja la última base
-
-Confirmar que `assets/mora_por_actividad2.xlsx` fue reemplazado y que mantiene una hoja llamada `Monitor` con el esquema esperado.
-
-## Flujo de trabajo sugerido
-
-```bash
-git switch main
-git pull
-git switch -c feature/nombre-del-cambio
-
-# desarrollar y validar
-
-git add <archivos-modificados>
-git commit -m "Descripción breve del cambio"
-git push -u origin feature/nombre-del-cambio
-```
-
-Abrir un pull request contra `main`, explicar qué fuente o sección se modificó y detallar cómo se validó. Para cambios de datos, incluir la última fecha disponible antes y después de la actualización.
 
 ## Seguridad y alcance
 
@@ -294,6 +139,3 @@ Abrir un pull request contra `main`, explicar qué fuente o sección se modific�
 - Las fuentes financieras externas pueden tener demoras, revisiones o límites de consulta.
 - El repositorio no incluye actualmente una licencia de software explícita. Antes de redistribuir el código fuera del ámbito acordado con CEU–UIA, definir las condiciones de uso.
 
-## Contacto funcional
-
-La validación económica de indicadores, fuentes, fórmulas y textos corresponde al Centro de Estudios de la Unión Industrial Argentina (CEU–UIA). Los cambios técnicos que alteren definiciones o metodologías deberían revisarse con el equipo antes de pasar a producción.
