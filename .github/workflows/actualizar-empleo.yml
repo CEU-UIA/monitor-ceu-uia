@@ -1,0 +1,70 @@
+name: Actualizar datos de empleo
+
+on:
+  schedule:
+    - cron: "17 11 * * 1-5"
+      timezone: "America/Argentina/Buenos_Aires"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Reprocesar aunque no haya una publicación nueva
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar-datos-empleo
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configurar Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: scripts/requirements-sipa.txt
+
+      - name: Instalar dependencias mínimas
+        run: python -m pip install --disable-pip-version-check -r scripts/requirements-sipa.txt
+
+      - name: Validar el actualizador
+        run: python -m unittest discover -s tests -p "test_actualizar_sipa_assets.py" -v
+
+      - name: Revisar y actualizar SIPA
+        env:
+          FORCE_UPDATE: ${{ inputs.force || 'false' }}
+        run: |
+          args=()
+          if [[ "$FORCE_UPDATE" == "true" ]]; then
+            args+=(--force)
+          fi
+          python scripts/actualizar_sipa_assets.py "${args[@]}"
+
+      - name: Publicar datos nuevos
+        run: |
+          if git diff --quiet -- assets/sipa; then
+            echo "SIPA no publicó datos nuevos. No hay cambios para guardar."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/sipa
+          git commit -m "Actualiza datos de empleo SIPA"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main

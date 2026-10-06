@@ -568,7 +568,7 @@ def render_empleo(go_to):
         df_total, df_sec_orig, df_sec_sa, df_sub_orig, df_sub_sa = cargar_sipa_excel()
 
     if df_total.empty:
-        st.error("No se pudieron cargar los datos SIPA desde el Excel.")
+        st.error("No se pudieron cargar los datos SIPA procesados.")
         return
 
     target_date = pd.Timestamp("2023-08-01")
