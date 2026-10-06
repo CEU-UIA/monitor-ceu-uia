@@ -68,7 +68,7 @@ La aplicación combina datos online y archivos locales versionados.
 | Datos Argentina | Comercio exterior y series de actividad | Online | 6 a 12 horas |
 | ArgentinaDatos | Serie directa de CCL | Online | 1 hora |
 | Yahoo Finance | Activos financieros y respaldo del CCL | Online | 6 horas |
-| SIPA | Empleo total, sectorial e industrial | CSV locales | Actualización manual |
+| SIPA | Empleo total, sectorial e industrial | CSV locales | Automática, días hábiles |
 | Central de Deudores | Morosidad por sector y subsector | Excel local | Actualización manual |
 
 Los tiempos anteriores corresponden a los decoradores `st.cache_data`. Un reinicio de la aplicación o el borrado de la caché fuerza una nueva consulta.
@@ -95,10 +95,18 @@ python scripts/actualizar_sipa_assets.py
 El script:
 
 1. localiza la versión más reciente del Excel de trabajo registrado;
-2. procesa las hojas total, sectorial y de subsectores industriales;
-3. reemplaza los cinco CSV de `assets/sipa/`.
+2. compara la URL con `assets/sipa/actualizacion.json` y termina sin descargar el
+   Excel cuando esa publicación ya fue procesada;
+3. ante una publicación nueva, procesa las hojas total, sectorial y de
+   subsectores industriales;
+4. valida que los cinco resultados tengan datos, fechas únicas y el mismo último
+   período antes de reemplazar los CSV de `assets/sipa/`.
 
-Después de ejecutarlo, hay que revisar las fechas y los cambios antes de commitear los CSV.
+El workflow `.github/workflows/actualizar-empleo.yml` ejecuta esta revisión de
+lunes a viernes a las 11:17 (hora argentina). Solo genera un commit cuando hay
+una publicación nueva, por lo que Streamlit recibe los CSV actualizados sin
+descargar ni procesar el Excel durante la navegación. También puede ejecutarse
+manualmente desde GitHub Actions, con la opción de forzar el reprocesamiento.
 
 ### Actualizar la morosidad
 
@@ -138,4 +146,3 @@ Los secretos nunca deben incluirse en commits, capturas o archivos compartidos. 
 - Las credenciales deben administrarse únicamente mediante los secretos de Streamlit.
 - Las fuentes financieras externas pueden tener demoras, revisiones o límites de consulta.
 - El repositorio no incluye actualmente una licencia de software explícita. Antes de redistribuir el código fuera del ámbito acordado con CEU–UIA, definir las condiciones de uso.
-

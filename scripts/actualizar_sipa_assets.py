@@ -1,10 +1,27 @@
+"""Actualiza los CSV de empleo que consume el monitor.
+
+El script está pensado para ejecutarse fuera de Streamlit (por ejemplo, desde
+GitHub Actions). En cada corrida consulta la página oficial de SIPA y solo
+descarga/procesa el Excel cuando encuentra una publicación nueva.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import html
+import json
+import os
 import re
-from io import BytesIO
+import tempfile
+from datetime import date, datetime, timezone
 from pathlib import Path
-from datetime import date
+from urllib.parse import urljoin
 
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,50 +32,164 @@ SIPA_LANDING_PAGE = (
     "https://www.argentina.gob.ar/trabajo/estadisticas/"
     "situacion-y-evolucion-del-trabajo-registrado"
 )
+SIPA_METADATA_FILE = SIPA_DIR / "actualizacion.json"
+SIPA_OUTPUT_FILES = (
+    "sipa_total.csv",
+    "sipa_sec_orig.csv",
+    "sipa_sec_sa.csv",
+    "sipa_sub_orig.csv",
+    "sipa_sub_sa.csv",
+)
 
 SIPA_XLSX_RE = re.compile(
-    r"https?://www\.argentina\.gob\.ar/sites/default/files/"
-    r"trabajoregistrado_(\d{4})_estadisticas\.xlsx",
+    r"(?:https?:)?//[^\"'<>\s]+/sites/default/files/"
+    r"trabajoregistrado_(\d{4})_estadisticas\.xlsx"
+    r"|/sites/default/files/trabajoregistrado_(\d{4})_estadisticas\.xlsx",
     re.IGNORECASE,
 )
 
 
-def resolver_latest_sipa_xlsx_url() -> str:
+def crear_sesion() -> requests.Session:
+    retry = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        backoff_factor=0.6,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET", "HEAD"}),
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=4, pool_maxsize=4)
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers.update(
+        {
+            "User-Agent": (
+                "Monitor-CEU-UIA/1.0 "
+                "(actualizador automatico de estadisticas publicas)"
+            )
+        }
+    )
+    return session
+
+
+def _version_desde_url(url: str) -> int:
+    match = re.search(r"trabajoregistrado_(\d{4})_estadisticas\.xlsx", url, re.I)
+    return int(match.group(1)) if match else -1
+
+
+def _urls_sipa_en_html(raw_html: str) -> list[str]:
+    contenido = html.unescape(raw_html)
+    urls: set[str] = set()
+
+    for match in SIPA_XLSX_RE.finditer(contenido):
+        raw_url = match.group(0)
+        if raw_url.startswith("//"):
+            raw_url = f"https:{raw_url}"
+        urls.add(urljoin(SIPA_LANDING_PAGE, raw_url))
+
+    return sorted(urls, key=_version_desde_url, reverse=True)
+
+
+def _meses_recientes(cantidad: int = 18):
+    year = date.today().year
+    month = date.today().month
+
+    for _ in range(cantidad):
+        yield year, month
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+
+
+def _url_existe(session: requests.Session, url: str) -> bool:
+    """Verifica una URL sin descargar el archivo completo."""
     try:
-        r = requests.get(SIPA_LANDING_PAGE, timeout=30)
-        r.raise_for_status()
+        response = session.get(
+            url,
+            headers={"Range": "bytes=0-0"},
+            stream=True,
+            timeout=(5, 12),
+        )
+        try:
+            return response.status_code in (200, 206)
+        finally:
+            response.close()
+    except requests.RequestException:
+        return False
 
-        matches = list(SIPA_XLSX_RE.finditer(r.text))
-        if matches:
-            best = max(matches, key=lambda m: int(m.group(1)))
-            return best.group(0)
 
-    except Exception as e:
-        print(f"Warning: no se pudo leer landing SIPA: {e}")
+def resolver_latest_sipa_xlsx_url(session: requests.Session | None = None) -> str:
+    session = session or crear_sesion()
 
-    y = date.today().year
-    m = date.today().month
+    try:
+        response = session.get(SIPA_LANDING_PAGE, timeout=(8, 30))
+        response.raise_for_status()
+        urls = _urls_sipa_en_html(response.text)
+        if urls:
+            return urls[0]
+    except requests.RequestException as exc:
+        print(f"Advertencia: no se pudo leer la página de SIPA: {exc}")
 
-    for _ in range(24):
-        yymm = f"{y % 100:02d}{m:02d}"
+    # Respaldo para cambios temporales en la página. Se prueba primero el mes
+    # actual y normalmente se resuelve en una o dos solicitudes livianas.
+    for year, month in _meses_recientes():
+        yymm = f"{year % 100:02d}{month:02d}"
         url = (
             "https://www.argentina.gob.ar/sites/default/files/"
             f"trabajoregistrado_{yymm}_estadisticas.xlsx"
         )
-
-        try:
-            r = requests.get(url, timeout=20)
-            if r.status_code == 200:
-                return url
-        except Exception:
-            pass
-
-        m -= 1
-        if m == 0:
-            m = 12
-            y -= 1
+        if _url_existe(session, url):
+            return url
 
     raise RuntimeError("No se pudo encontrar el XLSX vigente de SIPA.")
+
+
+def _leer_metadata(path: Path = SIPA_METADATA_FILE) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def fuente_ya_procesada(
+    url: str,
+    *,
+    force: bool = False,
+    sipa_dir: Path = SIPA_DIR,
+    metadata_path: Path = SIPA_METADATA_FILE,
+) -> bool:
+    if force:
+        return False
+
+    metadata = _leer_metadata(metadata_path)
+    outputs_completos = all((sipa_dir / name).is_file() for name in SIPA_OUTPUT_FILES)
+    return outputs_completos and metadata.get("source_url") == url
+
+
+def _descargar_excel(session: requests.Session, url: str, destino: Path) -> str:
+    digest = hashlib.sha256()
+    total = 0
+
+    with session.get(url, stream=True, timeout=(10, 120)) as response:
+        response.raise_for_status()
+        with destino.open("wb") as fh:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                fh.write(chunk)
+                digest.update(chunk)
+                total += len(chunk)
+
+    if total < 1_024:
+        raise RuntimeError("La descarga de SIPA está vacía o incompleta.")
+
+    with destino.open("rb") as fh:
+        if fh.read(2) != b"PK":
+            raise RuntimeError("La URL de SIPA no devolvió un archivo XLSX válido.")
+
+    return digest.hexdigest()
 
 
 def parse_mes(x):
@@ -73,21 +204,21 @@ def parse_mes(x):
             dt = pd.to_datetime(x, unit="D", origin="1899-12-30", errors="coerce")
             if not pd.isna(dt):
                 return pd.Timestamp(dt.year, dt.month, 1)
-        except Exception:
+        except (OverflowError, ValueError):
             pass
 
-    s = str(x).strip().lower()
-    if not s:
+    value = str(x).strip().lower()
+    if not value:
         return pd.NaT
 
-    s = s.replace("*", "").replace("/", "-").replace(".", "-")
-    s = re.sub(r"\s+", "", s)
+    value = value.replace("*", "").replace("/", "-").replace(".", "-")
+    value = re.sub(r"\s+", "", value)
 
-    m = re.match(r"^(?P<yyyy>\d{4})m(?P<mm>\d{1,2})$", s)
-    if m:
-        return pd.Timestamp(int(m.group("yyyy")), int(m.group("mm")), 1)
+    match = re.match(r"^(?P<yyyy>\d{4})m(?P<mm>\d{1,2})$", value)
+    if match:
+        return pd.Timestamp(int(match.group("yyyy")), int(match.group("mm")), 1)
 
-    dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    dt = pd.to_datetime(value, errors="coerce", dayfirst=True)
     if not pd.isna(dt):
         return pd.Timestamp(dt.year, dt.month, 1)
 
@@ -106,18 +237,18 @@ def parse_mes(x):
         "dic": 12, "diciembre": 12,
     }
 
-    m = re.match(r"^(?P<mon>[a-záéíóúñ]{3,9})-?(?P<yy>\d{2,4})$", s)
-    if m:
-        mon = m.group("mon")
-        yy = int(m.group("yy"))
-        if mon in meses:
-            year = yy if yy > 1900 else 2000 + yy
-            return pd.Timestamp(year, meses[mon], 1)
+    match = re.match(r"^(?P<mon>[a-záéíóúñ]{3,9})-?(?P<yy>\d{2,4})$", value)
+    if match:
+        month_name = match.group("mon")
+        year = int(match.group("yy"))
+        if month_name in meses:
+            year = year if year > 1900 else 2000 + year
+            return pd.Timestamp(year, meses[month_name], 1)
 
     return pd.NaT
 
 
-def extraer_serie_colB(df_raw, col_fecha=0, col_val=1):
+def extraer_serie_col_b(df_raw, col_fecha=0, col_val=1):
     tmp = df_raw.copy()
     tmp = tmp.rename(
         columns={
@@ -125,12 +256,12 @@ def extraer_serie_colB(df_raw, col_fecha=0, col_val=1):
             tmp.columns[col_val]: "valor_raw",
         }
     )
-
     tmp["fecha"] = tmp["fecha_raw"].apply(parse_mes)
     tmp["valor"] = pd.to_numeric(tmp["valor_raw"], errors="coerce")
 
     return (
         tmp.dropna(subset=["fecha", "valor"])[["fecha", "valor"]]
+        .drop_duplicates(subset="fecha", keep="last")
         .sort_values("fecha")
         .reset_index(drop=True)
     )
@@ -138,22 +269,22 @@ def extraer_serie_colB(df_raw, col_fecha=0, col_val=1):
 
 def extraer_sectores(df_raw):
     header = df_raw.iloc[1, 1:].copy().dropna()
-    sectores = [str(x).strip() for x in header.tolist() if str(x).strip()]
+    sectores = [str(value).strip() for value in header.tolist() if str(value).strip()]
 
     if not sectores:
         return pd.DataFrame(columns=["fecha"])
 
     data = df_raw.iloc[2:, : 1 + len(sectores)].copy()
     data.columns = ["fecha_raw"] + sectores
-
     data["fecha"] = data["fecha_raw"].apply(parse_mes)
     data = data.dropna(subset=["fecha"]).drop(columns=["fecha_raw"])
 
-    for c in sectores:
-        data[c] = pd.to_numeric(data[c], errors="coerce")
+    for column in sectores:
+        data[column] = pd.to_numeric(data[column], errors="coerce")
 
     return (
         data.dropna(how="all", subset=sectores)
+        .drop_duplicates(subset="fecha", keep="last")
         .sort_values("fecha")
         .reset_index(drop=True)
     )
@@ -164,22 +295,19 @@ def extraer_subsectores_industria(df_raw):
         return pd.DataFrame(columns=["fecha"])
 
     col_indices = list(range(1, min(8, df_raw.shape[1])))
-
-    nombres = []
-    for c in col_indices:
-        nombres.append(str(df_raw.iloc[1, c]).strip())
+    nombres = [str(df_raw.iloc[1, column]).strip() for column in col_indices]
 
     data = df_raw.iloc[2:, [0] + col_indices].copy()
     data.columns = ["fecha_raw"] + nombres
-
     data["fecha"] = data["fecha_raw"].apply(parse_mes)
     data = data.dropna(subset=["fecha"]).drop(columns=["fecha_raw"])
 
-    for c in nombres:
-        data[c] = pd.to_numeric(data[c], errors="coerce")
+    for column in nombres:
+        data[column] = pd.to_numeric(data[column], errors="coerce")
 
     return (
         data.dropna(how="all", subset=nombres)
+        .drop_duplicates(subset="fecha", keep="last")
         .sort_values("fecha")
         .reset_index(drop=True)
     )
@@ -189,54 +317,138 @@ def filtrar_fechas(df):
     if df.empty or "fecha" not in df.columns:
         return df
 
-    df = df.copy()
-    df = df[(df["fecha"] >= "2000-01-01") & (df["fecha"] <= "2035-12-01")]
-    return df.sort_values("fecha").reset_index(drop=True)
+    result = df.copy()
+    result = result[
+        (result["fecha"] >= "2000-01-01") & (result["fecha"] <= "2035-12-01")
+    ]
+    return result.sort_values("fecha").reset_index(drop=True)
 
 
-def main():
-    url = resolver_latest_sipa_xlsx_url()
-    print(f"Descargando SIPA desde: {url}")
+def _procesar_excel(path: Path) -> dict[str, pd.DataFrame]:
+    with pd.ExcelFile(path, engine="openpyxl") as workbook:
+        required = {"T.2.1", "T.2.2", "A.2.1", "A.2.2", "A.6.1", "A.6.2"}
+        missing = required.difference(workbook.sheet_names)
+        if missing:
+            raise RuntimeError(f"Faltan hojas esperadas en SIPA: {', '.join(sorted(missing))}")
 
-    r = requests.get(url, timeout=90)
-    r.raise_for_status()
+        t21 = pd.read_excel(workbook, sheet_name="T.2.1", header=None, usecols=[0, 1])
+        t22 = pd.read_excel(workbook, sheet_name="T.2.2", header=None, usecols=[0, 1])
+        a21 = pd.read_excel(
+            workbook, sheet_name="A.2.1", header=None, usecols=list(range(17))
+        )
+        a22 = pd.read_excel(
+            workbook, sheet_name="A.2.2", header=None, usecols=list(range(17))
+        )
+        sub_usecols = [0, 3, 4, 5, 6, 7, 8, 9]
+        a61 = pd.read_excel(
+            workbook, sheet_name="A.6.1", header=None, usecols=sub_usecols
+        )
+        a62 = pd.read_excel(
+            workbook, sheet_name="A.6.2", header=None, usecols=sub_usecols
+        )
 
-    xls = pd.ExcelFile(BytesIO(r.content), engine="openpyxl")
+    serie_original = extraer_serie_col_b(t21).rename(columns={"valor": "orig"})
+    serie_sa = extraer_serie_col_b(t22).rename(columns={"valor": "sa"})
 
-    t21 = pd.read_excel(xls, sheet_name="T.2.1", header=None, usecols=[0, 1])
-    t22 = pd.read_excel(xls, sheet_name="T.2.2", header=None, usecols=[0, 1])
+    frames = {
+        "sipa_total.csv": serie_original.merge(
+            serie_sa, on="fecha", how="inner"
+        ).sort_values("fecha"),
+        "sipa_sec_orig.csv": extraer_sectores(a21),
+        "sipa_sec_sa.csv": extraer_sectores(a22),
+        "sipa_sub_orig.csv": extraer_subsectores_industria(a61),
+        "sipa_sub_sa.csv": extraer_subsectores_industria(a62),
+    }
+    return {name: filtrar_fechas(frame) for name, frame in frames.items()}
 
-    a21 = pd.read_excel(xls, sheet_name="A.2.1", header=None, usecols=list(range(17)))
-    a22 = pd.read_excel(xls, sheet_name="A.2.2", header=None, usecols=list(range(17)))
 
-    a61 = pd.read_excel(xls, sheet_name="A.6.1", header=None, usecols=[0, 3, 4, 5, 6, 7, 8, 9])
-    a62 = pd.read_excel(xls, sheet_name="A.6.2", header=None, usecols=[0, 3, 4, 5, 6, 7, 8, 9])
+def _validar_outputs(frames: dict[str, pd.DataFrame]) -> pd.Timestamp:
+    for name in SIPA_OUTPUT_FILES:
+        frame = frames.get(name)
+        if frame is None or frame.empty:
+            raise RuntimeError(f"El procesamiento produjo {name} vacío.")
+        if "fecha" not in frame.columns:
+            raise RuntimeError(f"{name} no contiene la columna fecha.")
+        if frame["fecha"].duplicated().any():
+            raise RuntimeError(f"{name} contiene fechas duplicadas.")
+        if not frame["fecha"].is_monotonic_increasing:
+            raise RuntimeError(f"{name} no quedó ordenado por fecha.")
 
-    s_orig = extraer_serie_colB(t21).rename(columns={"valor": "orig"})
-    s_sa = extraer_serie_colB(t22).rename(columns={"valor": "sa"})
+    latest = {name: frame["fecha"].max() for name, frame in frames.items()}
+    if len(set(latest.values())) != 1:
+        detail = ", ".join(f"{name}: {value:%Y-%m}" for name, value in latest.items())
+        raise RuntimeError(f"Las series de SIPA terminan en períodos distintos ({detail}).")
 
-    df_total = s_orig.merge(s_sa, on="fecha", how="inner").sort_values("fecha")
+    return next(iter(latest.values()))
 
-    df_sec_orig = extraer_sectores(a21)
-    df_sec_sa = extraer_sectores(a22)
 
-    df_sub_orig = extraer_subsectores_industria(a61)
-    df_sub_sa = extraer_subsectores_industria(a62)
+def _guardar_outputs(
+    frames: dict[str, pd.DataFrame],
+    metadata: dict,
+    *,
+    sipa_dir: Path = SIPA_DIR,
+) -> None:
+    sipa_dir.mkdir(parents=True, exist_ok=True)
 
-    df_total = filtrar_fechas(df_total)
-    df_sec_orig = filtrar_fechas(df_sec_orig)
-    df_sec_sa = filtrar_fechas(df_sec_sa)
-    df_sub_orig = filtrar_fechas(df_sub_orig)
-    df_sub_sa = filtrar_fechas(df_sub_sa)
+    with tempfile.TemporaryDirectory(prefix="sipa_output_", dir=sipa_dir.parent) as tmp:
+        staging = Path(tmp)
+        for name, frame in frames.items():
+            # Los CSV históricos del repositorio usan CRLF. Mantenerlo evita
+            # diffs completos cuando solo se agrega un período nuevo.
+            frame.to_csv(
+                staging / name,
+                index=False,
+                encoding="utf-8-sig",
+                lineterminator="\r\n",
+            )
+        (staging / SIPA_METADATA_FILE.name).write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
-    df_total.to_csv(SIPA_DIR / "sipa_total.csv", index=False, encoding="utf-8-sig")
-    df_sec_orig.to_csv(SIPA_DIR / "sipa_sec_orig.csv", index=False, encoding="utf-8-sig")
-    df_sec_sa.to_csv(SIPA_DIR / "sipa_sec_sa.csv", index=False, encoding="utf-8-sig")
-    df_sub_orig.to_csv(SIPA_DIR / "sipa_sub_orig.csv", index=False, encoding="utf-8-sig")
-    df_sub_sa.to_csv(SIPA_DIR / "sipa_sub_sa.csv", index=False, encoding="utf-8-sig")
+        for name in (*SIPA_OUTPUT_FILES, SIPA_METADATA_FILE.name):
+            os.replace(staging / name, sipa_dir / name)
 
-    print("OK. Archivos guardados en assets/sipa/")
-    print(f"Última fecha total: {df_total['fecha'].max().date() if not df_total.empty else 'sin datos'}")
+
+def actualizar(*, force: bool = False) -> bool:
+    session = crear_sesion()
+    url = resolver_latest_sipa_xlsx_url(session)
+    print(f"Fuente SIPA detectada: {url}")
+
+    if fuente_ya_procesada(url, force=force):
+        print("Sin cambios: la publicación ya fue procesada.")
+        return False
+
+    with tempfile.TemporaryDirectory(prefix="sipa_download_") as tmp:
+        workbook_path = Path(tmp) / "sipa.xlsx"
+        print("Descargando la nueva publicación...")
+        sha256 = _descargar_excel(session, url, workbook_path)
+        frames = _procesar_excel(workbook_path)
+
+    latest_date = _validar_outputs(frames)
+    metadata = {
+        "source_url": url,
+        "source_version": f"{_version_desde_url(url):04d}",
+        "source_sha256": sha256,
+        "latest_data_date": latest_date.strftime("%Y-%m-%d"),
+        "processed_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+    }
+    _guardar_outputs(frames, metadata)
+
+    print("OK. Archivos guardados en assets/sipa/.")
+    print(f"Última fecha disponible: {latest_date.date()}")
+    return True
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="descarga y procesa nuevamente la publicación aunque ya esté registrada",
+    )
+    args = parser.parse_args()
+    actualizar(force=args.force)
 
 
 if __name__ == "__main__":
