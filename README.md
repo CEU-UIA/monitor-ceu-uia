@@ -22,7 +22,6 @@ El punto de entrada principal es `app.py`. La aplicación usa un router propio b
 | Finanzas | `finanzas` | `pages/finanzas.py` | BCRA y Yahoo Finance |
 | Empleo privado | `empleo` | `pages/empleo.py` | SIPA procesado localmente |
 | Comercio exterior | `comex` | `pages/comex.py` | ICA del INDEC / Datos Argentina |
-| Morosidad | `morosidad` | `pages/morosidad.py` | Archivo local derivado de la Central de Deudores |
 
 Todos los gráficos Plotly comparten fondo blanco, tipografía Montserrat, fechas y números en formato español, paleta institucional con color principal `#2C5378`, descarga en PNG y exportación de datos en CSV.
 
