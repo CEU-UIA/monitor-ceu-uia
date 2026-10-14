@@ -196,7 +196,11 @@ def parse_mes(x):
     if pd.isna(x):
         return pd.NaT
 
-    if isinstance(x, pd.Timestamp):
+    # openpyxl puede entregar las fechas históricas como datetime de Python y
+    # las observaciones provisorias como texto (p. ej. "jul-26*"). Si el
+    # datetime se convierte antes a texto y luego se interpreta con
+    # dayfirst=True, 2026-07-01 puede transformarse erróneamente en enero.
+    if isinstance(x, (pd.Timestamp, datetime, date)):
         return pd.Timestamp(x.year, x.month, 1)
 
     if isinstance(x, (int, float)) and not pd.isna(x):
@@ -362,7 +366,32 @@ def _procesar_excel(path: Path) -> dict[str, pd.DataFrame]:
     return {name: filtrar_fechas(frame) for name, frame in frames.items()}
 
 
-def _validar_outputs(frames: dict[str, pd.DataFrame]) -> pd.Timestamp:
+def _leer_ultimas_fechas(
+    *, sipa_dir: Path = SIPA_DIR
+) -> dict[str, pd.Timestamp]:
+    ultimas: dict[str, pd.Timestamp] = {}
+    for name in SIPA_OUTPUT_FILES:
+        path = sipa_dir / name
+        if not path.is_file():
+            continue
+        try:
+            fechas = pd.to_datetime(
+                pd.read_csv(path, usecols=["fecha"])["fecha"], errors="coerce"
+            ).dropna()
+        except (OSError, ValueError, KeyError):
+            continue
+        if not fechas.empty:
+            ultimas[name] = fechas.max()
+    return ultimas
+
+
+def _validar_outputs(
+    frames: dict[str, pd.DataFrame],
+    *,
+    ultimas_anteriores: dict[str, pd.Timestamp] | None = None,
+) -> pd.Timestamp:
+    ultimas_anteriores = ultimas_anteriores or {}
+
     for name in SIPA_OUTPUT_FILES:
         frame = frames.get(name)
         if frame is None or frame.empty:
@@ -373,6 +402,26 @@ def _validar_outputs(frames: dict[str, pd.DataFrame]) -> pd.Timestamp:
             raise RuntimeError(f"{name} contiene fechas duplicadas.")
         if not frame["fecha"].is_monotonic_increasing:
             raise RuntimeError(f"{name} no quedó ordenado por fecha.")
+
+        ultima = frame["fecha"].max()
+        anterior = ultimas_anteriores.get(name)
+        if anterior is not None and ultima < anterior:
+            raise RuntimeError(
+                f"{name} retrocede de {anterior:%Y-%m} a {ultima:%Y-%m}."
+            )
+
+        # Las tablas que consume el dashboard son mensuales. Comprobar los
+        # últimos 24 meses evita publicar nuevamente una serie fragmentada
+        # aunque todas las hojas terminen, por casualidad, en el mismo período.
+        periodos = pd.PeriodIndex(frame["fecha"], freq="M")
+        cantidad = min(24, len(periodos))
+        esperados = pd.period_range(end=periodos.max(), periods=cantidad, freq="M")
+        faltantes = esperados.difference(periodos)
+        if not faltantes.empty:
+            detalle = ", ".join(str(periodo) for periodo in faltantes[:6])
+            raise RuntimeError(
+                f"{name} perdió meses recientes ({detalle})."
+            )
 
     latest = {name: frame["fecha"].max() for name, frame in frames.items()}
     if len(set(latest.values())) != 1:
@@ -419,13 +468,17 @@ def actualizar(*, force: bool = False) -> bool:
         print("Sin cambios: la publicación ya fue procesada.")
         return False
 
+    ultimas_anteriores = _leer_ultimas_fechas()
+
     with tempfile.TemporaryDirectory(prefix="sipa_download_") as tmp:
         workbook_path = Path(tmp) / "sipa.xlsx"
         print("Descargando la nueva publicación...")
         sha256 = _descargar_excel(session, url, workbook_path)
         frames = _procesar_excel(workbook_path)
 
-    latest_date = _validar_outputs(frames)
+    latest_date = _validar_outputs(
+        frames, ultimas_anteriores=ultimas_anteriores
+    )
     metadata = {
         "source_url": url,
         "source_version": f"{_version_desde_url(url):04d}",
