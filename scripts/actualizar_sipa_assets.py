@@ -120,28 +120,46 @@ def _url_existe(session: requests.Session, url: str) -> bool:
         return False
 
 
-def resolver_latest_sipa_xlsx_url(session: requests.Session | None = None) -> str:
+def resolver_latest_sipa_xlsx_url(
+    session: requests.Session | None = None,
+) -> str:
     session = session or crear_sesion()
+    url_publicada = None
+    version_publicada = -1
 
     try:
         response = session.get(SIPA_LANDING_PAGE, timeout=(8, 30))
         response.raise_for_status()
         urls = _urls_sipa_en_html(response.text)
+
         if urls:
-            return urls[0]
+            url_publicada = urls[0]
+            version_publicada = _version_desde_url(url_publicada)
+            print(f"Enlace encontrado en la página: {url_publicada}")
+
     except requests.RequestException as exc:
         print(f"Advertencia: no se pudo leer la página de SIPA: {exc}")
 
-    # Respaldo para cambios temporales en la página. Se prueba primero el mes
-    # actual y normalmente se resuelve en una o dos solicitudes livianas.
+    # Comprobar meses más nuevos, aunque la página tenga un enlace.
+    # Sin enlace, se mantiene la búsqueda de los últimos 18 meses.
     for year, month in _meses_recientes():
         yymm = f"{year % 100:02d}{month:02d}"
+
+        # Al llegar a la versión publicada, no hace falta seguir.
+        if url_publicada and int(yymm) <= version_publicada:
+            break
+
         url = (
             "https://www.argentina.gob.ar/sites/default/files/"
             f"trabajoregistrado_{yymm}_estadisticas.xlsx"
         )
+
         if _url_existe(session, url):
+            print(f"Publicación más reciente encontrada: {url}")
             return url
+
+    if url_publicada:
+        return url_publicada
 
     raise RuntimeError("No se pudo encontrar el XLSX vigente de SIPA.")
 
