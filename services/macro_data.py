@@ -4,6 +4,8 @@ import requests
 import streamlit as st
 from io import BytesIO
 from io import StringIO
+import logging
+from zipfile import BadZipFile
 
 
 # ============================================================
@@ -119,15 +121,34 @@ def get_a3500() -> pd.DataFrame:
 @st.cache_data(ttl=60 * 60)
 def get_rem_last() -> pd.DataFrame:
     url = (
-        "https://www.bcra.gob.ar/archivos/Pdfs/PublicacionesEstadisticas/"
-        "historico-relevamiento-expectativas-mercado.xlsx"
+        "https://www.bcra.gob.ar/archivos/Pdfs/PublicacionesEstadisticas/informes/"
+        "relevamiento-expectativas-mercado-historico.xlsx"
     )
-    df = pd.read_excel(url, sheet_name="Base de Datos Completa", skiprows=1)
+    empty = pd.DataFrame({"Date": pd.Series(dtype="datetime64[ns]"),
+                          "v_m_REM": pd.Series(dtype="float64")})
+    try:
+        response = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        response.raise_for_status()
+        df = pd.read_excel(BytesIO(response.content), sheet_name="Base de Datos Completa",
+                           skiprows=1, engine="openpyxl")
+        required = {"Variable", "Referencia", "Fecha de pronóstico", "Período", "Mediana"}
+        if not required.issubset(df.columns):
+            raise ValueError("El Excel REM no contiene las columnas esperadas")
+    except (requests.RequestException, ValueError, BadZipFile, OSError):
+        logging.getLogger(__name__).exception("No se pudo descargar o leer el REM del BCRA")
+        return empty
 
     rem = df.loc[
         (df["Variable"] == "Precios minoristas (IPC nivel general; INDEC)")
         & (df["Referencia"] == "var. % mensual")
     ].copy()
+
+    rem["Fecha de pronóstico"] = pd.to_datetime(rem["Fecha de pronóstico"], errors="coerce")
+    rem["Período"] = pd.to_datetime(rem["Período"], errors="coerce")
+    rem["Mediana"] = pd.to_numeric(rem["Mediana"], errors="coerce")
+    rem = rem.dropna(subset=["Fecha de pronóstico", "Período", "Mediana"])
+    if rem.empty:
+        return empty
 
     latest = rem["Fecha de pronóstico"].max()
 
@@ -241,10 +262,22 @@ def build_bands_2026(bands_2025: pd.DataFrame, rem: pd.DataFrame, ipc: pd.DataFr
     m = ipc.merge(rem_m, on="Period", how="outer").sort_values("Period")
     m["v_m_dec"] = np.where(m["v_m_CPI"].notna(), m["v_m_CPI"], m["v_m_REM"] / 100)
 
-    end_month = m.loc[m["v_m_REM"].notna(), "Period"].max() + 2
+    empty = pd.DataFrame({"Date": pd.Series(dtype="datetime64[ns]"),
+                          "lower": pd.Series(dtype="float64"),
+                          "upper": pd.Series(dtype="float64")})
+    valid = m.loc[m["v_m_dec"].notna(), "Period"]
+    if valid.empty:
+        return empty
+    end_month = valid.max() + 2
+    if end_month < pd.Period("2026-01", freq="M"):
+        return empty
     b = pd.DataFrame({"Period": pd.period_range("2026-01", end_month, freq="M")})
     b["ref"] = b["Period"] - 2
     b = b.merge(m[["Period", "v_m_dec"]].rename(columns={"Period": "ref"}), on="ref", how="left")
+    # Una banda acumulada no puede continuar después de un mes sin inflación.
+    b = b.loc[b["v_m_dec"].notna().cummin()]
+    if b.empty:
+        return empty
 
     lower0 = bands_2025.loc[bands_2025["Date"] == "2025-12-31", "lower"].iloc[0]
     upper0 = bands_2025.loc[bands_2025["Date"] == "2025-12-31", "upper"].iloc[0]
@@ -930,3 +963,4 @@ def get_calidad_cartera_long() -> pd.DataFrame:
     except Exception as e:
         st.warning(f"BCRA Calidad de cartera error: {e}")
         return pd.DataFrame(columns=["Date", "agente", "concepto", "value"])
+

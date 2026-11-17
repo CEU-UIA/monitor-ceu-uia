@@ -251,6 +251,9 @@ def render_macro_fx(go_to):
     )
 
     rem = get_rem_last()
+    if rem.empty:
+        st.warning("El REM del BCRA no está disponible temporalmente. "
+                   "Las bandas se muestran solo hasta donde permite el IPC observado.")
     ipc = get_ipc_bcra()
 
     bands_2025 = build_bands_2025("2025-04-14", "2025-12-31", 1000.0, 1400.0)
@@ -529,8 +532,6 @@ def render_macro_fx(go_to):
     )
 
     df_plot = df[(df["Date"] >= pd.Timestamp(start_d)) & (df["Date"] <= pd.Timestamp(end_d))].copy()
-    if medida == "Nivel" and pd.notna(bands_max):
-        df_plot = df_plot[df_plot["Date"] <= bands_max]
 
     # =========================
     # PLOT (Tipo de cambio)
@@ -1201,3 +1202,4 @@ def render_macro_fx(go_to):
         "</div>",
         unsafe_allow_html=True,
     )
+
