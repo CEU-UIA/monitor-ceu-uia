@@ -614,7 +614,7 @@ def render_empleo(go_to):
     except Exception:
         v23_pct = v23_p = np.nan
 
-    INFORME_URL = "https://uia.org.ar/centro-de-estudios/documentos/actualidad-industrial/?q=Laborales"
+    INFORME_URL = "https://uia.org.ar/centro-de-estudios/centro-de-informes"
 
     # =========================================================
     # BLOQUE 1 — Total empleo privado registrado

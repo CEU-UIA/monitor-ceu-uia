@@ -28,7 +28,7 @@ INDU_LOADING_PHRASES = [
 MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
 # Link header (pedido)
-INFORME_CEU_URL = "https://uia.org.ar/centro-de-estudios/documentos/actualidad-industrial/?q=Industrial"
+INFORME_CEU_URL = "https://uia.org.ar/centro-de-estudios/centro-de-informes"
 
 # Rebase (pedido)
 BASE_DT = pd.Timestamp("2023-04-01")  # abr-23 (MS)
