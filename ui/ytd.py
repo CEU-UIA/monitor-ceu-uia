@@ -8,7 +8,7 @@ from services.metrics import year_to_date
 def ytd_pill(df, value_col, date_col="Date", *, mode="december", unit="%"):
     """Annual accumulated change for a card, with its comparison in the tooltip."""
     value, date = year_to_date(df, value_col, date_col, mode=mode, difference=unit != "%")
-    label = f"acum. {date.year}" if pd.notna(date) else "acum. anual"
+    label = "acum. i.a"
     if pd.isna(date):
         detail = "Sin datos disponibles."
     elif mode == "sum":
@@ -35,3 +35,4 @@ def ytd_pill(df, value_col, date_col="Date", *, mode="december", unit="%"):
         f'<span style="font-weight:900">{arrow}{number}</span>'
         f'<span class="lab">{label}</span></div>'
     )
+

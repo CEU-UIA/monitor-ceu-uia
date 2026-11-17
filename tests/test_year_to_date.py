@@ -75,10 +75,11 @@ class YearToDateTests(unittest.TestCase):
         df = pd.DataFrame({"Periodo": pd.to_datetime(["2025-12-01", "2026-07-01"]), "Indice": [100, 105]})
         html = ytd_pill(df, "Indice", "Periodo")
         self.assertIn("5,0%", html)
-        self.assertIn("acum. 2026", html)
+        self.assertIn("acum. i.a", html)
         self.assertIn("01/07/2026", html)
         self.assertIn("diciembre de 2025", html)
 
 
 if __name__ == "__main__":
     unittest.main()
+

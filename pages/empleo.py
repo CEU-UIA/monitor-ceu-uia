@@ -293,7 +293,6 @@ def _render_kpi_block(title, subtitle, icon, mes_txt, m_e, m_p, i_e, i_p, v23_pc
     ytd_pct, ytd_date = year_to_date(ytd_data, ytd_col, "fecha")
     ytd_jobs, _ = year_to_date(ytd_data, ytd_col, "fecha", difference=True)
     ytd_jobs *= scale
-    ytd_year = str(ytd_date.year) if pd.notna(ytd_date) else "anual"
     def _bc(x):
         if x is None or (isinstance(x, float) and np.isnan(x)): return "neu"
         return "green" if float(x) >= 0 else "red"
@@ -335,7 +334,7 @@ def _render_kpi_block(title, subtitle, icon, mes_txt, m_e, m_p, i_e, i_p, v23_pc
         f'<div class="fx-badge {_bc(v23_pct)}">{_ar(v23_pct)} {_fmt_delta_es(v23_p, 0)} puestos</div>'
         f'</div>'
         f'<div title="Último dato sin estacionalidad vs diciembre del año anterior.">'
-        f'<div class="fx-kpi-label">Acumulada {ytd_year} (s.e.)</div>'
+        f'<div class="fx-kpi-label">acum. i.a (s.e.)</div>'
         f'<div class="fx-value">{_ps(ytd_pct)}</div>'
         f'<div class="fx-badge {_bc(ytd_pct)}">{_ar(ytd_pct)} {_fmt_delta_es(ytd_jobs, 0)} puestos</div>'
         f'</div>'
@@ -852,4 +851,5 @@ def render_empleo(go_to):
             chart_key="chart_emp_ind_sa",
             scale=scale,
         )
+
 

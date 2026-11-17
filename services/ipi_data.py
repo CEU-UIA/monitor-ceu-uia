@@ -50,7 +50,7 @@ def procesar_serie_excel(df: pd.DataFrame, col_idx: int) -> pd.DataFrame:
     try:
         data = df.iloc[6:].copy()
         data[1] = data[1].ffill().astype(str).str.extract(r"(\d{4})")[0]
-        data = data.dropna(subset=[1, 2, col_idx])
+        data = data.dropna(subset=[1, 2])
 
         meses_map = {
             "enero": 1,
@@ -67,11 +67,22 @@ def procesar_serie_excel(df: pd.DataFrame, col_idx: int) -> pd.DataFrame:
             "diciembre": 12,
         }
         data["m"] = data[2].astype(str).str.lower().str.strip().map(meses_map)
+        data = data.dropna(subset=["m"])
 
         data["fecha"] = pd.to_datetime(
             data[1] + "-" + data["m"].astype(int).astype(str) + "-01",
             errors="coerce",
         )
+
+        data = data.dropna(subset=["fecha"]).sort_values("fecha")
+        if data.empty:
+            return pd.DataFrame(columns=["fecha", "valor"])
+        # No presentar el último valor público antiguo como un dato vigente
+        # cuando INDEC protege el período más reciente por secreto estadístico.
+        latest = str(data[col_idx].iloc[-1]).strip().lower().rstrip(".")
+        if latest == "s":
+            return pd.DataFrame(columns=["fecha", "valor"])
+        data[col_idx] = pd.to_numeric(data[col_idx], errors="coerce")
 
         return (
             data[["fecha", col_idx]]
@@ -81,3 +92,4 @@ def procesar_serie_excel(df: pd.DataFrame, col_idx: int) -> pd.DataFrame:
         )
     except Exception:
         return pd.DataFrame(columns=["fecha", "valor"])
+

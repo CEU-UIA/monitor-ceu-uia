@@ -10,6 +10,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from services.ipi_data import cargar_ipi_excel, procesar_serie_excel
+from services.metrics import year_to_date
 from ui.ytd import ytd_pill
 from ui.charts import plotly_chart
 
@@ -427,7 +428,9 @@ def _inject_css_fx():
           .ipi-metrics {
             display: flex;
             gap: 10px;
+            flex-wrap: wrap;
           }
+          .ipi-metrics .ytd-pill { flex-basis: 100%; justify-content: center; }
 
           .ipi-chip {
             flex: 1;
@@ -478,7 +481,9 @@ def _inject_css_fx():
             display: flex;
             gap: 12px;
             margin-bottom: 14px;
+            flex-wrap: wrap;
           }
+          .ipi-modal-chips .ytd-pill { flex-basis: 100%; justify-content: center; }
           .ipi-modal-chip {
             flex: 1;
             border-radius: 10px;
@@ -1319,6 +1324,7 @@ def render_ipi(go_to):
 
                 # YoY (original)
                 v_i = None
+                s_o = pd.DataFrame(columns=["Date", "Value"])
                 header_idx = code_to_header_idx_c2.get(div_code, None)
                 if header_idx is not None:
                     s_o_raw = procesar_serie_excel(df_c2, int(header_idx))
@@ -1350,6 +1356,7 @@ def render_ipi(go_to):
                             </div>
                             <div class="ipi-chip-val {_val_class(v_i)}">{yoy_str}</div>
                           </div>
+                          {ytd_pill(s_o, "Value", mode="sum")}
                         </div>
                       </div>
                     </div>
@@ -1416,6 +1423,7 @@ def render_ipi(go_to):
                         </div>
                         <div class="ipi-modal-chip-val {_val_class(v_i_div)}">{yoy_modal_str}</div>
                       </div>
+                      {ytd_pill(s_div_o, "Value", mode="sum")}
                     </div>
                     """),
                     unsafe_allow_html=True,
@@ -1426,7 +1434,7 @@ def render_ipi(go_to):
                 tab1, tab2 = st.tabs(["🔎 Subsectores", "📈 Gráfico"])
 
                 with tab1:
-                    st.caption("Variación interanual (%). Fuente: INDEC — IPI Manufacturero (Excel)")
+                    st.caption("Variación interanual y acum. i.a (%). Acumulado: enero–último dato vs igual período del año anterior. Fuente: INDEC. Se omiten las series cuyo último dato está protegido por secreto estadístico.")
                     if header_idx is None:
                         st.warning("No se pudo ubicar la rama en el Cuadro 2.")
                     else:
@@ -1441,9 +1449,11 @@ def render_ipi(go_to):
                             if s_sub is None or s_sub.empty:
                                 continue
                             yoy = _compute_yoy_df(s_sub)["YoY"].dropna()
-                            if yoy.empty:
-                                continue
-                            rows.append({"Subsector": nm, "Interanual (%)": float(yoy.iloc[-1])})
+                            accumulated, latest = year_to_date(s_sub, "Value", mode="sum")
+                            rows.append({"Subsector": nm,
+                                         "Interanual (%)": float(yoy.iloc[-1]) if not yoy.empty else np.nan,
+                                         "Acum. i.a (%)": accumulated,
+                                         "Último dato": _month_label_es(latest)})
 
                         if not rows:
                             st.info("No hay desglose adicional disponible.")
@@ -1451,16 +1461,18 @@ def render_ipi(go_to):
                             df_sub = pd.DataFrame(rows)
                             df_sub["Interanual (%)"] = pd.to_numeric(df_sub["Interanual (%)"], errors="coerce")
                             df_sub = df_sub.sort_values("Interanual (%)", ascending=False).reset_index(drop=True)
-                            df_sub["Interanual"] = df_sub["Interanual (%)"].apply(lambda x: f"{_fmt_pct_es(x,1)}%")
+                            df_sub["Interanual"] = df_sub["Interanual (%)"].apply(lambda x: f"{_fmt_pct_es(x,1)}%" if pd.notna(x) else "—")
+                            df_sub["acum. i.a"] = df_sub["Acum. i.a (%)"].apply(lambda x: f"{_fmt_pct_es(x,1)}%" if pd.notna(x) else "—")
 
                             st.dataframe(
-                                df_sub[["Subsector", "Interanual"]],
+                                df_sub[["Subsector", "Último dato", "Interanual", "acum. i.a"]],
                                 use_container_width=True,
                                 height=520,
                                 hide_index=True,
                                 column_config={
                                     "Subsector": st.column_config.TextColumn("Subsector"),
                                     "Interanual": st.column_config.TextColumn("Interanual", help="Variación interanual (%)"),
+                                    "acum. i.a": st.column_config.TextColumn("acum. i.a", help="Enero–último dato vs igual período del año anterior (%)"),
                                 },
                             )
 
@@ -1519,4 +1531,5 @@ def render_ipi(go_to):
                     st.rerun()
 
             _modal()
+
 
