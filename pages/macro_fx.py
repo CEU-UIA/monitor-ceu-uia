@@ -21,6 +21,7 @@ from services.macro_data import (
 from services.market_data import get_ccl_df
 
 from ui.common import safe_pct
+from ui.ytd import ytd_pill
 from ui.charts import plotly_chart
 
 
@@ -106,7 +107,7 @@ def render_macro_fx(go_to):
 
           .fx-row{
             display: grid;
-            grid-template-columns: auto 1fr auto;
+            grid-template-columns: auto minmax(0, 1fr); row-gap: 10px;
             align-items: center;
             column-gap: 14px;
           }
@@ -130,9 +131,11 @@ def render_macro_fx(go_to):
           .fx-meta .sep{ opacity: 0.40; padding: 0 6px; }
 
           .fx-pills{
+            grid-column: 1 / -1;
+            flex-wrap: wrap;
             display:flex;
             gap: 10px;
-            justify-content: flex-end;
+            justify-content:flex-start;
             align-items: center;
             white-space: nowrap;
           }
@@ -440,6 +443,7 @@ def render_macro_fx(go_to):
         f'          <span class="{cls_va}">{va_txt}</span>',
         '          <span class="lab">interanual</span>',
         "        </div>",
+        ytd_pill(hdr_df, "VAL"),
         "      </div>",
         "    </div>",
         "  </div>",
@@ -774,6 +778,7 @@ def render_macro_fx(go_to):
                 f'          <span class="{cls_va2}">{va2_txt}</span>',
                 '          <span class="lab">interanual</span>',
                 "        </div>",
+                ytd_pill(tcr_main, "Value"),
                 "      </div>",
                 "    </div>",
                 "  </div>",
@@ -1065,6 +1070,7 @@ def render_macro_fx(go_to):
         f'          <span class="{cls_va}">{_fmt_pct_es(va, 1)} pp</span>',
         '          <span class="lab">interanual</span>',
         "        </div>",
+        ytd_pill(brecha_series, "Value", unit="p.p."),
         "      </div>",
         "    </div>",
         "  </div>",
@@ -1202,4 +1208,5 @@ def render_macro_fx(go_to):
         "</div>",
         unsafe_allow_html=True,
     )
+
 

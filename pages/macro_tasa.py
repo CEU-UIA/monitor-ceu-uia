@@ -7,6 +7,7 @@ import textwrap
 import streamlit.components.v1 as components
 from services.macro_data import get_monetaria_serie
 from ui.common import safe_pct   # 👈 ESTA LÍNEA
+from ui.ytd import ytd_pill
 from ui.charts import plotly_chart
 from services.macro_data import get_calidad_cartera_long
 
@@ -168,7 +169,7 @@ def render_macro_tasa(go_to):
 
           .fx-row{
             display: grid;
-            grid-template-columns: auto 1fr auto;
+            grid-template-columns: auto minmax(0, 1fr); row-gap: 10px;
             align-items: center;
             column-gap: 14px;
           }
@@ -192,9 +193,11 @@ def render_macro_tasa(go_to):
           .fx-meta .sep{ opacity: 0.40; padding: 0 6px; }
 
           .fx-pills{
+            grid-column: 1 / -1;
+            flex-wrap: wrap;
             display:flex;
             gap: 10px;
-            justify-content: flex-end;
+            justify-content:flex-start;
             align-items: center;
             white-space: nowrap;
           }
@@ -492,6 +495,7 @@ def render_macro_tasa(go_to):
             f'          <span class="{cls_va}">{_fmt_pp_es(va_pp, 1)}</span>',
             '          <span class="lab">interanual</span>',
             "        </div>",
+            ytd_pill(s, "VAL", unit="p.p."),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -731,6 +735,7 @@ def render_macro_tasa(go_to):
             f'          <span class="{cls_va}">{va_txt}</span>',
             '          <span class="lab">interanual</span>',
             "        </div>",
+            ytd_pill(reservas, "value"),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -1048,6 +1053,7 @@ def render_macro_tasa(go_to):
             f'          <span class="{cls_va}">{_fmt_pp_es(va_pp, 1)}</span>',
             '          <span class="lab">interanual</span>',
             "        </div>",
+            ytd_pill(s, "value", unit="p.p."),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -1174,3 +1180,4 @@ def render_macro_tasa(go_to):
             "</div>",
             unsafe_allow_html=True,
         )
+

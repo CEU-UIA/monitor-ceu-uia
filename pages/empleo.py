@@ -7,6 +7,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from services.metrics import calc_var, fmt, obtener_nombre_mes
+from services.metrics import year_to_date
 from services.sipa_data import cargar_sipa_excel
 from ui.charts import plotly_chart
 
@@ -142,7 +143,7 @@ def _inject_css():
             box-shadow: 0 10px 18px rgba(15,55,100,0.10);
           }
           .fx-kpi-grid {
-            display: grid; grid-template-columns: 1fr 1fr 1fr;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
             gap: 20px; align-items: start;
           }
           .fx-kpi-label { font-size: 13px; font-weight: 800; color: #526484; margin-bottom: 4px; }
@@ -287,7 +288,12 @@ def _apply_panel_wrap(marker_id: str):
 # ============================================================
 # Bloque KPI principal (Total o Industria)
 # ============================================================
-def _render_kpi_block(title, subtitle, icon, mes_txt, m_e, m_p, i_e, i_p, v23_pct, v23_p, report_url=None):
+def _render_kpi_block(title, subtitle, icon, mes_txt, m_e, m_p, i_e, i_p, v23_pct, v23_p,
+                      report_url=None, ytd_data=None, ytd_col="sa", scale=1):
+    ytd_pct, ytd_date = year_to_date(ytd_data, ytd_col, "fecha")
+    ytd_jobs, _ = year_to_date(ytd_data, ytd_col, "fecha", difference=True)
+    ytd_jobs *= scale
+    ytd_year = str(ytd_date.year) if pd.notna(ytd_date) else "anual"
     def _bc(x):
         if x is None or (isinstance(x, float) and np.isnan(x)): return "neu"
         return "green" if float(x) >= 0 else "red"
@@ -327,6 +333,11 @@ def _render_kpi_block(title, subtitle, icon, mes_txt, m_e, m_p, i_e, i_p, v23_pc
         f'<div class="fx-kpi-label">vs Agosto 2023</div>'
         f'<div class="fx-value">{_ps(v23_pct)}</div>'
         f'<div class="fx-badge {_bc(v23_pct)}">{_ar(v23_pct)} {_fmt_delta_es(v23_p, 0)} puestos</div>'
+        f'</div>'
+        f'<div title="Último dato sin estacionalidad vs diciembre del año anterior.">'
+        f'<div class="fx-kpi-label">Acumulada {ytd_year} (s.e.)</div>'
+        f'<div class="fx-value">{_ps(ytd_pct)}</div>'
+        f'<div class="fx-badge {_bc(ytd_pct)}">{_ar(ytd_pct)} {_fmt_delta_es(ytd_jobs, 0)} puestos</div>'
         f'</div>'
         f'</div>'
         f'<div class="fx-divider"></div>'
@@ -614,6 +625,7 @@ def render_empleo(go_to):
             title="Empleo Privado Registrado", subtitle="Total", icon="💼",
             mes_txt=mes_txt, m_e=m_e, m_p=m_p, i_e=i_e, i_p=i_p,
             v23_pct=v23_pct, v23_p=v23_p, report_url=INFORME_URL,
+            ytd_data=df_total, scale=scale,
         )
 
     # =========================================================
@@ -743,6 +755,7 @@ def render_empleo(go_to):
                 title="Empleo Industrial", subtitle="Industria manufacturera", icon="🏭",
                 mes_txt=mes_txt, m_e=mi_e, m_p=mi_p, i_e=ii_e, i_p=ii_p,
                 v23_pct=iv23_pct, v23_p=iv23_p, report_url=None,
+                ytd_data=tmp2, ytd_col=ind_data["name"] + "_sa", scale=scale,
             )
 
     # =========================================================
@@ -839,3 +852,4 @@ def render_empleo(go_to):
             chart_key="chart_emp_ind_sa",
             scale=scale,
         )
+

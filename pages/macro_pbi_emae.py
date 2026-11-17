@@ -10,6 +10,7 @@ from services.macro_data import (
     get_emae_excel_full,
     get_emae_sectores_long,
 )
+from ui.ytd import ytd_pill
 from ui.charts import plotly_chart
 
 # ============================================================
@@ -129,7 +130,7 @@ def render_macro_pbi_emae(go_to):
 
           .fx-row{
             display: grid;
-            grid-template-columns: auto 1fr auto;
+            grid-template-columns: auto minmax(0, 1fr); row-gap: 10px;
             align-items: center;
             column-gap: 14px;
           }
@@ -153,9 +154,11 @@ def render_macro_pbi_emae(go_to):
           .fx-meta .sep{ opacity: 0.40; padding: 0 6px; }
 
           .fx-pills{
+            grid-column: 1 / -1;
+            flex-wrap: wrap;
             display:flex;
             gap: 10px;
-            justify-content: flex-end;
+            justify-content:flex-start;
             align-items: center;
             white-space: nowrap;
           }
@@ -385,6 +388,7 @@ def render_macro_pbi_emae(go_to):
             f'          <span class="{cls_mom}">{_fmt_pct_es(mom_val, 1) if mom_val is not None else "—"}%</span>',
             '          <span class="lab">mensual</span>',
             "        </div>",
+            ytd_pill(df_emae, "Original", mode="sum"),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -959,3 +963,4 @@ def render_macro_pbi_emae(go_to):
                     "</div>",
                     unsafe_allow_html=True,
                 )
+

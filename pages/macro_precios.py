@@ -9,6 +9,7 @@ import requests
 import streamlit.components.v1 as components
 
 from services.macro_data import get_ipc_indec_full
+from ui.ytd import ytd_pill
 from ui.charts import plotly_chart
 
 
@@ -301,7 +302,7 @@ def render_macro_precios(go_to):
 
           .fx-row{
             display: grid;
-            grid-template-columns: auto 1fr auto;
+            grid-template-columns: auto minmax(0, 1fr); row-gap: 10px;
             align-items: center;
             column-gap: 14px;
           }
@@ -325,9 +326,11 @@ def render_macro_precios(go_to):
           .fx-meta .sep{ opacity: 0.40; padding: 0 6px; }
 
           .fx-pills{
+            grid-column: 1 / -1;
+            flex-wrap: wrap;
             display:flex;
             gap: 10px;
-            justify-content: flex-end;
+            justify-content:flex-start;
             align-items: center;
             white-space: nowrap;
           }
@@ -983,6 +986,7 @@ def render_macro_precios(go_to):
             f'          <span class="{cls_a}">{_fmt_pct_es(a_val, 1) if pd.notna(a_val) else "—"}%</span>',
             '          <span class="lab">anual</span>',
             "        </div>",
+            ytd_pill(hdr_all, "Indice_IPC", "Periodo"),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -1253,6 +1257,7 @@ def render_macro_precios(go_to):
             f'          <span class="{cls_a}">{_fmt_pct_es(a_val, 1) if pd.notna(a_val) else "—"}%</span>',
             '          <span class="lab">anual</span>',
             "        </div>",
+            ytd_pill(at, "Indice", "Periodo"),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -1455,3 +1460,4 @@ def render_macro_precios(go_to):
         "<div style='color:rgba(20,50,79,0.70); font-size:12px; margin-top:6px;'>Fuente: INDEC.</div>",
         unsafe_allow_html=True,
     )
+

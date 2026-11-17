@@ -5,6 +5,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from services.metrics import calc_var, fmt, obtener_nombre_mes
+from services.metrics import year_to_date
+from ui.ytd import ytd_pill
 from services.comex_data import fetch_ica
 from ui.charts import plotly_chart
 
@@ -48,15 +50,7 @@ def _fmt_pct(x, dec=1):
     return f"{float(x):.{dec}f}%".replace(".", ",")
 
 def _calc_ytd_pct(df_, col):
-    if col not in df_.columns:
-        return np.nan
-    last = df_["fecha"].iloc[-1]
-    y, m = last.year, last.month
-    cur  = df_[(df_["fecha"].dt.year == y)   & (df_["fecha"].dt.month <= m)][col].sum()
-    prev = df_[(df_["fecha"].dt.year == y-1) & (df_["fecha"].dt.month <= m)][col].sum()
-    if prev == 0:
-        return np.nan
-    return (cur / prev - 1) * 100
+    return year_to_date(df_, col, "fecha", mode="sum")[0]
 
 
 def _cx_card(title, tipo, yoy, ytd):
@@ -263,11 +257,14 @@ def render_comex(go_to):
         f'</div></div>'
         f'<div class="com-card"><div class="com-kpi-grid">'
         f'<div><div class="com-meta">Exportaciones</div><div class="com-value">{fmt_es(expo_last,0)}</div>'
-        f'<div class="com-badge {_cls(expo_i)}">{_arrow(expo_i)}{fmt_es(expo_i,1)}% interanual</div></div>'
+        f'<div class="com-badge {_cls(expo_i)}">{_arrow(expo_i)}{fmt_es(expo_i,1)}% interanual</div>'
+        f'<div style="margin-top:8px">{ytd_pill(df, "expo_total", "fecha", mode="sum")}</div></div>'
         f'<div><div class="com-meta">Importaciones</div><div class="com-value">{fmt_es(impo_last,0)}</div>'
-        f'<div class="com-badge {_cls(impo_i)}">{_arrow(impo_i)}{fmt_es(impo_i,1)}% interanual</div></div>'
+        f'<div class="com-badge {_cls(impo_i)}">{_arrow(impo_i)}{fmt_es(impo_i,1)}% interanual</div>'
+        f'<div style="margin-top:8px">{ytd_pill(df, "impo_total", "fecha", mode="sum")}</div></div>'
         f'<div><div class="com-meta">Saldo comercial</div><div class="com-value">{fmt_es(saldo_last,0)}</div>'
-        f'<div class="com-badge {_cls(saldo_di)}">{_arrow(saldo_di)}USD {fmt_es(saldo_di,0)}</div></div>'
+        f'<div class="com-badge {_cls(saldo_di)}">{_arrow(saldo_di)}USD {fmt_es(saldo_di,0)}</div>'
+        f'<div style="margin-top:8px">{ytd_pill(df, "saldo", "fecha", mode="sum", unit="mill. USD")}</div></div>'
         f'</div></div></div>',
         unsafe_allow_html=True)
 
@@ -541,3 +538,4 @@ def render_comex(go_to):
         )
 
     st.markdown("<div style='color:rgba(20,50,79,0.70);font-size:12px;margin-top:8px;'>Fuente: INDEC \u2014 Intercambio Comercial Argentino (ICA).</div>", unsafe_allow_html=True)
+

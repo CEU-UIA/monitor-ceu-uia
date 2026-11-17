@@ -8,6 +8,7 @@ import requests
 import streamlit.components.v1 as components
 
 from ui.common import safe_pct
+from ui.ytd import ytd_pill
 from ui.charts import plotly_chart
 
 # ✅ services
@@ -303,14 +304,14 @@ def render_finanzas(go_to=None):
             padding: 14px 14px 12px 14px;
             box-shadow: 0 10px 18px rgba(15, 55, 100, 0.10);
           }
-          .fx-row{ display:grid; grid-template-columns:auto 1fr auto; align-items:center; column-gap:14px; }
+          .fx-row{ display:grid; grid-template-columns: auto minmax(0, 1fr); row-gap: 10px; align-items:center; column-gap:14px; }
           .fx-value{ font-size:46px; font-weight:950; letter-spacing:-0.02em; color:#14324f; line-height:0.95; }
           .fx-meta{
             font-size:13px; color:#2b4660; font-weight:700;
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
           }
           .fx-meta .sep{ opacity:0.40; padding:0 6px; }
-          .fx-pills{ display:flex; gap:10px; justify-content:flex-end; align-items:center; white-space:nowrap; }
+          .fx-pills{grid-column:1 / -1; flex-wrap:wrap;  display:flex; gap:10px; justify-content:flex-start; align-items:center; white-space:nowrap; }
           .fx-pill{
             display:inline-flex; align-items:center; gap:8px;
             padding:7px 10px; border-radius:12px;
@@ -775,6 +776,7 @@ def render_finanzas(go_to=None):
             f'          <span class="{cls_va}">{safe_pct(va, 1)}</span>',
             '          <span class="lab">interanual</span>',
             "        </div>",
+            ytd_pill(main, "Value"),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -1191,6 +1193,7 @@ def render_finanzas(go_to=None):
             f'          <span class="{cls_va}">{safe_pct(va,1)}</span>',
             '          <span class="lab">interanual</span>',
             "        </div>",
+            ytd_pill(s_sel, "value"),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -1540,6 +1543,7 @@ def render_finanzas(go_to=None):
                 f'          <span class="{cls_va}">{safe_pct(va, 1)}</span>',
                 '          <span class="lab">interanual</span>',
                 "        </div>",
+                ytd_pill(s_intl, "value"),
                 "      </div>",
                 "    </div>",
                 "  </div>",
@@ -1631,3 +1635,4 @@ def render_finanzas(go_to=None):
                 "</div>",
                 unsafe_allow_html=True,
             )
+

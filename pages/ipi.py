@@ -10,6 +10,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from services.ipi_data import cargar_ipi_excel, procesar_serie_excel
+from ui.ytd import ytd_pill
 from ui.charts import plotly_chart
 
 
@@ -244,7 +245,7 @@ def _inject_css_fx():
 
           .fx-row{
             display: grid;
-            grid-template-columns: auto 1fr auto;
+            grid-template-columns: auto minmax(0, 1fr); row-gap: 10px;
             align-items: center;
             column-gap: 14px;
           }
@@ -268,9 +269,11 @@ def _inject_css_fx():
           .fx-meta .sep{ opacity: 0.40; padding: 0 6px; }
 
           .fx-pills{
+            grid-column: 1 / -1;
+            flex-wrap: wrap;
             display:flex;
             gap: 10px;
-            justify-content: flex-end;
+            justify-content:flex-start;
             align-items: center;
             white-space: nowrap;
           }
@@ -692,6 +695,7 @@ def render_ipi(go_to):
             f'          <span class="{cls_mom}">{_fmt_pct_es(mom_val, 1) if mom_val is not None else "—"}%</span>',
             '          <span class="lab">mensual</span>',
             "        </div>",
+            ytd_pill(df_ng_o, "Value", mode="sum"),
             "      </div>",
             "    </div>",
             "  </div>",
@@ -1515,3 +1519,4 @@ def render_ipi(go_to):
                     st.rerun()
 
             _modal()
+
